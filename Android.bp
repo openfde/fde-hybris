@@ -1,0 +1,71 @@
+
+filegroup {
+    name: "egl_core_files",
+
+    srcs: [
+        "egl/display.cpp",
+        "egl/egl-surface.cpp",
+        "egl/egl.cpp",
+        "egl/libgbm.c",
+    ],
+}
+
+cc_library_shared {
+    name: "libEGL_proxy",
+    defaults: ["opengl_defaults"],
+    local_include_dirs : ["include"],
+}
+
+cc_defaults {
+    name : "opengl_defaults",
+    defaults: ["fde_hybris_defaults"],
+
+    relative_install_path: "egl",
+
+    srcs: [":egl_core_files"],
+
+    header_libs: [
+        "gl_headers",
+        "libsystem_headers",
+        "libnativebase_headers",
+    ],
+
+    shared_libs: [
+        "libcutils",
+        "libnativewindow",
+    ],
+
+    static_libs: [
+        "libarect",
+    ],
+
+    // headers we include in our public headers
+    export_static_lib_headers: [
+        "libarect",
+    ],
+    export_shared_lib_headers: ["libnativewindow"],
+
+}
+
+cc_defaults {
+    name: "fde_hybris_defaults",
+
+    cflags: [
+        "-D_GNU_SOURCE=1",
+        "-D_FILE_OFFSET_BITS=64",
+        "-Wall",
+        "-Wsign-compare",
+        "-Wpointer-arith",
+        "-Wcast-qual",
+        "-Wcast-align",
+        "-Wno-unused-parameter",
+    ],
+
+    vendor: true,
+
+    shared_libs: [
+        "libsync",
+        "liblog",
+        "libdl",
+    ],
+}
