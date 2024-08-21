@@ -33,6 +33,8 @@ public:
     return reinterpret_cast<ANativeWindow *>(android_window_);
   }
 
+  bool IsWindow() const { return android_window_ != nullptr; }
+
   static void InsertSurface(EglSurface *surface);
   static void RemoveSurface(EGLSurface surface);
   static EglSurface *FindSurface(EGLSurface surface);

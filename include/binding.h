@@ -24,16 +24,6 @@ static void *hybris_open_library() {
   return lib_handle;
 }
 
-static void *hybris_dlsym(void **fptr, const char *sym) {
-  if (*fptr == nullptr) {
-    void *handle = hybris_open_library();
-    *fptr = dlsym(handle, sym);
-  }
-  return *fptr;
-}
-
-#define HYBRIS_DLSYM(sym) hybris_dlsym((void **)&s_##sym, #sym)
-
 #ifndef HYBRIS_VISIBILITY
 #define HYBRIS_VISIBILITY __attribute__((visibility("default")))
 #endif
@@ -141,4 +131,107 @@ static void *hybris_dlsym(void **fptr, const char *sym) {
       f = (func_type)dlsym(handle, #symbol);                                \
     }                                                                       \
     return f(v1, v2, v3, v4, v5, v6, v7, v8);                               \
+  }
+
+#define HYBRIS_IMPLEMENT_FUNCTION9(return_type, symbol, t1, t2, t3, t4, t5, \
+                                   t6, t7, t8, t9)                          \
+  HYBRIS_VISIBILITY return_type symbol(t1 v1, t2 v2, t3 v3, t4 v4, t5 v5,   \
+                                       t6 v6, t7 v7, t8 v8, t9 v9) {        \
+    typedef return_type (*func_type)(t1, t2, t3, t4, t5, t6, t7, t8, t9);   \
+    static func_type f = NULL;                                              \
+    if (!f) {                                                               \
+      void *handle = hybris_open_library();                                 \
+      f = (func_type)dlsym(handle, #symbol);                                \
+    }                                                                       \
+    return f(v1, v2, v3, v4, v5, v6, v7, v8, v9);                           \
+  }
+
+#define HYBRIS_IMPLEMENT_FUNCTION10(return_type, symbol, t1, t2, t3, t4, t5,   \
+                                    t6, t7, t8, t9, t10)                       \
+  HYBRIS_VISIBILITY return_type symbol(t1 v1, t2 v2, t3 v3, t4 v4, t5 v5,      \
+                                       t6 v6, t7 v7, t8 v8, t9 v9, t10 v10) {  \
+    typedef return_type (*func_type)(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10); \
+    static func_type f = NULL;                                                 \
+    if (!f) {                                                                  \
+      void *handle = hybris_open_library();                                    \
+      f = (func_type)dlsym(handle, #symbol);                                   \
+    }                                                                          \
+    return f(v1, v2, v3, v4, v5, v6, v7, v8, v9, v10);                         \
+  }
+
+#define HYBRIS_IMPLEMENT_FUNCTION11(return_type, symbol, t1, t2, t3, t4, t5,  \
+                                    t6, t7, t8, t9, t10, t11)                 \
+  HYBRIS_VISIBILITY return_type symbol(t1 v1, t2 v2, t3 v3, t4 v4, t5 v5,     \
+                                       t6 v6, t7 v7, t8 v8, t9 v9, t10 v10,   \
+                                       t11 v11) {                             \
+    typedef return_type (*func_type)(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, \
+                                     t11);                                    \
+    static func_type f = NULL;                                                \
+    if (!f) {                                                                 \
+      void *handle = hybris_open_library();                                   \
+      f = (func_type)dlsym(handle, #symbol);                                  \
+    }                                                                         \
+    return f(v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11);                   \
+  }
+
+#define HYBRIS_IMPLEMENT_FUNCTION12(return_type, symbol, t1, t2, t3, t4, t5,  \
+                                    t6, t7, t8, t9, t10, t11, t12)            \
+  HYBRIS_VISIBILITY return_type symbol(t1 v1, t2 v2, t3 v3, t4 v4, t5 v5,     \
+                                       t6 v6, t7 v7, t8 v8, t9 v9, t10 v10,   \
+                                       t11 v11, t12 v12) {                    \
+    typedef return_type (*func_type)(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, \
+                                     t11, t12);                               \
+    static func_type f = NULL;                                                \
+    if (!f) {                                                                 \
+      void *handle = hybris_open_library();                                   \
+      f = (func_type)dlsym(handle, #symbol);                                  \
+    }                                                                         \
+    return f(v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12);              \
+  }
+
+#define HYBRIS_IMPLEMENT_FUNCTION13(return_type, symbol, t1, t2, t3, t4, t5,  \
+                                    t6, t7, t8, t9, t10, t11, t12, t13)       \
+  HYBRIS_VISIBILITY return_type symbol(t1 v1, t2 v2, t3 v3, t4 v4, t5 v5,     \
+                                       t6 v6, t7 v7, t8 v8, t9 v9, t10 v10,   \
+                                       t11 v11, t12 v12, t13 v13) {           \
+    typedef return_type (*func_type)(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, \
+                                     t11, t12, t13);                          \
+    static func_type f = NULL;                                                \
+    if (!f) {                                                                 \
+      void *handle = hybris_open_library();                                   \
+      f = (func_type)dlsym(handle, #symbol);                                  \
+    }                                                                         \
+    return f(v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13);         \
+  }
+
+#define HYBRIS_IMPLEMENT_FUNCTION14(return_type, symbol, t1, t2, t3, t4, t5,  \
+                                    t6, t7, t8, t9, t10, t11, t12, t13, t14)  \
+  HYBRIS_VISIBILITY return_type symbol(t1 v1, t2 v2, t3 v3, t4 v4, t5 v5,     \
+                                       t6 v6, t7 v7, t8 v8, t9 v9, t10 v10,   \
+                                       t11 v11, t12 v12, t13 v13, t14 v14) {  \
+    typedef return_type (*func_type)(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, \
+                                     t11, t12, t13, t14);                     \
+    static func_type f = NULL;                                                \
+    if (!f) {                                                                 \
+      void *handle = hybris_open_library();                                   \
+      f = (func_type)dlsym(handle, #symbol);                                  \
+    }                                                                         \
+    return f(v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14);    \
+  }
+
+#define HYBRIS_IMPLEMENT_FUNCTION15(return_type, symbol, t1, t2, t3, t4, t5,  \
+                                    t6, t7, t8, t9, t10, t11, t12, t13, t14,  \
+                                    t15)                                      \
+  HYBRIS_VISIBILITY return_type symbol(                                       \
+      t1 v1, t2 v2, t3 v3, t4 v4, t5 v5, t6 v6, t7 v7, t8 v8, t9 v9, t10 v10, \
+      t11 v11, t12 v12, t13 v13, t14 v14, t15 v15) {                          \
+    typedef return_type (*func_type)(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, \
+                                     t11, t12, t13, t14, t15);                \
+    static func_type f = NULL;                                                \
+    if (!f) {                                                                 \
+      void *handle = hybris_open_library();                                   \
+      f = (func_type)dlsym(handle, #symbol);                                  \
+    }                                                                         \
+    return f(v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14,     \
+             v15);                                                            \
   }

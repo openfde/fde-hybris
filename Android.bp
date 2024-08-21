@@ -16,6 +16,42 @@ cc_library_shared {
     local_include_dirs : ["include"],
 }
 
+filegroup {
+    name: "glesv1_core_files",
+
+    srcs: [
+        "glesv1/glesv1_cm.c",
+    ],
+}
+
+cc_library_shared {
+    name: "libGLESv1_CM_proxy",
+    defaults: ["fde_hybris_defaults"],
+    local_include_dirs : ["include"],
+
+    relative_install_path: "egl",
+
+    srcs: [":glesv1_core_files"],
+}
+
+filegroup {
+    name: "glesv2_core_files",
+
+    srcs: [
+        "glesv2/glesv2.c",
+    ],
+}
+
+cc_library_shared {
+    name: "libGLESv2_proxy",
+    defaults: ["fde_hybris_defaults"],
+    local_include_dirs : ["include"],
+
+    relative_install_path: "egl",
+
+    srcs: [":glesv2_core_files"],
+}
+
 cc_defaults {
     name : "opengl_defaults",
     defaults: ["fde_hybris_defaults"],
@@ -25,7 +61,7 @@ cc_defaults {
     srcs: [":egl_core_files"],
 
     header_libs: [
-        "gl_headers",
+//        "gl_headers",
         "libsystem_headers",
         "libnativebase_headers",
     ],
