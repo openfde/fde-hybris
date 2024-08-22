@@ -13,7 +13,10 @@ filegroup {
 cc_library_shared {
     name: "libEGL_proxy",
     defaults: ["opengl_defaults"],
-    local_include_dirs : ["include"],
+    local_include_dirs : [
+        "include",
+        "util",
+    ],
 }
 
 filegroup {
@@ -52,6 +55,39 @@ cc_library_shared {
     srcs: [":glesv2_core_files"],
 }
 
+
+filegroup {
+    name: "ugralloc_core_files",
+
+    srcs: [
+        "util/u_gralloc/u_gralloc.c",
+        "util/u_gralloc/u_gralloc_fallback.c",
+        "util/u_gralloc/u_gralloc_internal.c",
+        "util/u_gralloc/u_gralloc_libdrm.c",
+    ],
+}
+
+cc_library_static {
+    name: "libhybris_utils",
+    defaults: ["fde_hybris_defaults"],
+    local_include_dirs : ["include"],
+
+    srcs: [":ugralloc_core_files"],
+
+    shared_libs: [
+        "libcutils",
+        "libnativewindow",
+        "libhardware",
+    ],
+
+    cflags: [
+        "-Wno-cast-qual",
+        "-Wno-sign-compare",
+        "-Wno-cast-align",
+    ],
+
+}
+
 cc_defaults {
     name : "opengl_defaults",
     defaults: ["fde_hybris_defaults"],
@@ -69,10 +105,13 @@ cc_defaults {
     shared_libs: [
         "libcutils",
         "libnativewindow",
+        "libhardware",
+        "libGLESv2_proxy",
     ],
 
     static_libs: [
         "libarect",
+        "libhybris_utils",
     ],
 
     // headers we include in our public headers

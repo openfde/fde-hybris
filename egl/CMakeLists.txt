@@ -7,9 +7,13 @@ set(LIBSRC
 
   egl-surface.cpp
   egl-surface.h
+
+  libgbm.c
 )
 
 add_library(${LIBBASENAME} SHARED ${LIBSRC})
+
+target_link_libraries(${LIBBASENAME} GLESv2_proxy hybris_utils)
 
 set(ANDROID_INCLUDES
   ../../../frameworks/native/libs/nativewindow/include

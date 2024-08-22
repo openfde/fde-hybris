@@ -24,8 +24,12 @@ set(CMAKE_CXX_ANDROID_TOOLCHAIN_PREFIX ${CMAKE_ANDROID_STANDALONE_TOOLCHAIN}/bin
 set(CMAKE_CXX_COMPILER ${CMAKE_C_ANDROID_TOOLCHAIN_PREFIX}clang++)
 
 include_directories(include)
+include_directories(util)
 
 add_subdirectory(egl)
 add_subdirectory(glesv1)
 add_subdirectory(glesv2)
+add_subdirectory(util)
+
+add_subdirectory(applet)
 
