@@ -22,7 +22,7 @@
 #include "egl-surface.h"
 #include "gbm.h"
 
-#define HYBRIS_LIBNAME "libEGL.so"
+#define HYBRIS_LIBNAME "libEGL.so.1" // soname
 #define HYBRIS_ENVNAME "HYBRIS-EGL"
 #include "binding.h"
 

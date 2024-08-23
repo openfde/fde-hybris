@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-#define HYBRIS_LIBNAME "libGLESv2.so"
+#define HYBRIS_LIBNAME "libGLESv2.so.2"  // soname
 #define HYBRIS_ENVNAME "HYBRIS-GLESv2"
 #include "binding.h"
 

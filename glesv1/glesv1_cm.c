@@ -5,7 +5,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 
-#define HYBRIS_LIBNAME "libGLESv1_CM.so"
+#define HYBRIS_LIBNAME "libGLESv1_CM.so.1"  // soname
 #define HYBRIS_ENVNAME "HYBRIS-GLESv1"
 #include "binding.h"
 

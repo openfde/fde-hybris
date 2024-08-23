@@ -4,7 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define HYBRIS_LIBNAME "libgbm.so"
+#define HYBRIS_LIBNAME "libgbm.so.1"  // soname
 #define HYBRIS_ENVNAME "HYBRIS-GBM"
 #include "binding.h"
 
