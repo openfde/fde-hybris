@@ -14,6 +14,8 @@
 #include <string>
 #include <vector>
 
+#include <log/log.h>
+#include <system/graphics-base.h>
 #include <vndk/window.h>
 
 #include "u_gralloc/u_gralloc.h"
@@ -65,9 +67,8 @@ extern EGLSurface eglCreateWindowSurface(EGLDisplay dpy, EGLConfig config,
                                          const EGLint *attrib_list);
 extern EGLSurface eglCreatePbufferSurface(EGLDisplay dpy, EGLConfig config,
                                           const EGLint *attrib_list);
-extern EGLSurface eglCreatePixmapSurface(EGLDisplay dpy, EGLConfig config,
-                                         EGLNativePixmapType pixmap,
-                                         const EGLint *attrib_list);
+HYBRIS_IMPLEMENT_FUNCTION4(EGLSurface, eglCreatePixmapSurface, EGLDisplay,
+                           EGLConfig, EGLNativePixmapType, const EGLint *);
 
 HYBRIS_IMPLEMENT_FUNCTION3(EGLBoolean, eglCopyBuffers, EGLDisplay, EGLSurface,
                            EGLNativePixmapType);
@@ -105,16 +106,17 @@ extern EGLBoolean eglSurfaceAttrib(EGLDisplay dpy, EGLSurface surface,
 HYBRIS_IMPLEMENT_FUNCTION2(EGLBoolean, eglSwapInterval, EGLDisplay, EGLint);
 
 // EGL_KHR_fence_sync extension requires EGL 1.1
-extern EGLSyncKHR eglCreateSyncKHR(EGLDisplay dpy, EGLenum type,
-                                   const EGLint *attrib_list);
+HYBRIS_IMPLEMENT_FUNCTION3(EGLSyncKHR, eglCreateSyncKHR, EGLDisplay, EGLenum,
+                           const EGLint *);
 
-extern EGLBoolean eglDestroySyncKHR(EGLDisplay dpy, EGLSyncKHR sync);
+HYBRIS_IMPLEMENT_FUNCTION2(EGLBoolean, eglDestroySyncKHR, EGLDisplay,
+                           EGLSyncKHR);
 
-extern EGLint eglClientWaitSyncKHR(EGLDisplay dpy, EGLSyncKHR sync,
-                                   EGLint flags, EGLTimeKHR timeout);
+HYBRIS_IMPLEMENT_FUNCTION4(EGLint, eglClientWaitSyncKHR, EGLDisplay, EGLSyncKHR,
+                           EGLint, EGLTimeKHR);
 
-extern EGLBoolean eglGetSyncAttribKHR(EGLDisplay dpy, EGLSyncKHR sync,
-                                      EGLint attribute, EGLint *value);
+HYBRIS_IMPLEMENT_FUNCTION4(EGLBoolean, eglGetSyncAttribKHR, EGLDisplay,
+                           EGLSyncKHR, EGLint, EGLint *);
 
 // EGL 1.2
 HYBRIS_IMPLEMENT_FUNCTION1(EGLBoolean, eglBindAPI, EGLenum);
@@ -137,14 +139,31 @@ extern EGLBoolean eglDestroyImageKHR(EGLDisplay dpy, EGLImageKHR img);
 // EGL 1.4
 HYBRIS_IMPLEMENT_FUNCTION0(EGLContext, eglGetCurrentContext);
 
+// EGL_EXT_platform_base, EGL_MESA_platform_gbm, EGL_MESA_platform_surfaceless
+extern EGLDisplay eglGetPlatformDisplayEXT(EGLenum platform,
+                                           void *native_display,
+                                           const EGLint *attrib_list);
+extern EGLSurface eglCreatePlatformWindowSurfaceEXT(EGLDisplay dpy,
+                                                    EGLConfig config,
+                                                    void *native_window,
+                                                    const EGLint *attrib_list);
+extern EGLSurface eglCreatePlatformPixmapSurfaceEXT(EGLDisplay dpy,
+                                                    EGLConfig config,
+                                                    void *native_pixmap,
+                                                    const EGLint *attrib_list);
+
 // EGL 1.5
-extern EGLSync eglCreateSync(EGLDisplay dpy, EGLenum type,
-                             const EGLAttrib *attrib_list);
-extern EGLBoolean eglDestroySync(EGLDisplay dpy, EGLSync sync);
-extern EGLint eglClientWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags,
-                                EGLTime timeout);
-extern EGLBoolean eglGetSyncAttrib(EGLDisplay dpy, EGLSync sync,
-                                   EGLint attribute, EGLAttrib *value);
+HYBRIS_IMPLEMENT_FUNCTION3(EGLSync, eglCreateSync, EGLDisplay, EGLenum,
+                           const EGLAttrib *);
+
+HYBRIS_IMPLEMENT_FUNCTION2(EGLBoolean, eglDestroySync, EGLDisplay, EGLSync);
+
+HYBRIS_IMPLEMENT_FUNCTION4(EGLint, eglClientWaitSync, EGLDisplay, EGLSync,
+                           EGLint, EGLTime);
+
+HYBRIS_IMPLEMENT_FUNCTION4(EGLBoolean, eglGetSyncAttrib, EGLDisplay, EGLSync,
+                           EGLint, EGLAttrib *);
+
 extern EGLImage eglCreateImage(EGLDisplay dpy, EGLContext ctx, EGLenum target,
                                EGLClientBuffer buffer,
                                const EGLAttrib *attrib_list);
@@ -155,11 +174,11 @@ extern EGLSurface eglCreatePlatformWindowSurface(EGLDisplay dpy,
                                                  EGLConfig config,
                                                  void *native_window,
                                                  const EGLAttrib *attrib_list);
-extern EGLSurface eglCreatePlatformPixmapSurface(EGLDisplay dpy,
-                                                 EGLConfig config,
-                                                 void *native_pixmap,
-                                                 const EGLAttrib *attrib_list);
-extern EGLBoolean eglWaitSync(EGLDisplay dpy, EGLSync sync, EGLint flags);
+HYBRIS_IMPLEMENT_FUNCTION4(EGLSurface, eglCreatePlatformPixmapSurface,
+                           EGLDisplay, EGLConfig, void *, const EGLAttrib *);
+
+HYBRIS_IMPLEMENT_FUNCTION3(EGLBoolean, eglWaitSync, EGLDisplay, EGLSync,
+                           EGLint);
 }
 
 namespace {
@@ -333,6 +352,64 @@ EGLBoolean FillAttribs(const ANativeWindowBuffer *native_buffer,
   return EGL_TRUE;
 }
 
+int32_t get_gbm_from_hal_format(int32_t hal_format) {
+  switch (hal_format) {
+  case HAL_PIXEL_FORMAT_RGB_565:
+    return GBM_FORMAT_RGB565;
+  case HAL_PIXEL_FORMAT_BGRA_8888:
+    return GBM_FORMAT_ARGB8888;
+  case HAL_PIXEL_FORMAT_RGBA_8888:
+    return GBM_FORMAT_ABGR8888;
+  case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
+    /*
+     * HACK: Hardcode this to RGBX_8888 as per cros_gralloc hack.
+     * TODO: Remove this once https://issuetracker.google.com/32077885 is
+     * fixed.
+     */
+  case HAL_PIXEL_FORMAT_RGBX_8888:
+    return GBM_FORMAT_XBGR8888;
+  case HAL_PIXEL_FORMAT_RGBA_FP16:
+    return GBM_FORMAT_ABGR16161616F;
+  case HAL_PIXEL_FORMAT_RGBA_1010102:
+    return GBM_FORMAT_ABGR2101010;
+  default:
+    break;
+  }
+  return EGL_DONT_CARE;
+}
+
+int32_t get_hal_from_gbm_format(int32_t gbm_format) {
+  switch (gbm_format) {
+  // case GBM_FORMAT_R8:
+  // case GBM_FORMAT_R16:
+  // case GBM_FORMAT_GR88:
+  // case GBM_FORMAT_GR1616:
+  // case GBM_FORMAT_ARGB1555:
+  case GBM_FORMAT_RGB565:
+    return HAL_PIXEL_FORMAT_RGB_565;
+  case GBM_FORMAT_XRGB8888:
+    return HAL_PIXEL_FORMAT_RGB_888;
+  case GBM_FORMAT_ARGB8888:
+    return HAL_PIXEL_FORMAT_BGRA_8888;
+  case GBM_FORMAT_ABGR8888:
+    return HAL_PIXEL_FORMAT_RGBA_8888;
+  case GBM_FORMAT_XBGR8888:
+    return HAL_PIXEL_FORMAT_RGBX_8888;
+  // case GBM_FORMAT_XBGR16161616:
+  case GBM_FORMAT_XBGR16161616F:
+  case GBM_FORMAT_ABGR16161616F:
+    return HAL_PIXEL_FORMAT_RGBA_FP16;
+  // case GBM_FORMAT_XRGB2101010:
+  // case GBM_FORMAT_ARGB2101010:
+  case GBM_FORMAT_XBGR2101010:
+  case GBM_FORMAT_ABGR2101010:
+    return HAL_PIXEL_FORMAT_RGBA_1010102;
+  default:
+    ALOGW("unsupported gbm buffer format 0x%08X", gbm_format);
+  }
+  return EGL_DONT_CARE;
+}
+
 } // namespace
 
 HYBRIS_VISIBILITY EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id) {
@@ -410,6 +487,10 @@ HYBRIS_VISIBILITY EGLBoolean eglChooseConfig(EGLDisplay dpy,
       auto &type = *std::next(it);
       type &= ~EGL_WINDOW_BIT;
       type |= EGL_PBUFFER_BIT;
+    } else if (*it == EGL_NATIVE_VISUAL_ID) {
+      *std::next(it) = get_gbm_from_hal_format(*std::next(it));
+    } else if (*it == EGL_NATIVE_VISUAL_TYPE) {
+      *std::next(it) = EGL_DONT_CARE;
     }
   }
   return s_eglChooseConfig(dpy, attribs.data(), configs, config_size,
@@ -511,17 +592,9 @@ HYBRIS_VISIBILITY EGLSurface eglCreateWindowSurface(EGLDisplay dpy,
   return egl_surface;
 }
 
-HYBRIS_VISIBILITY EGLSurface eglCreatePlatformPixmapSurface(
-    EGLDisplay dpy, EGLConfig config, void *native_pixmap,
-    const EGLAttrib *attrib_list) {
-  display::SetDisplayError(EGL_NOT_INITIALIZED);
-  assert(false);
-  return EGL_NO_SURFACE;
-}
-
-static EGLBoolean (*s_eglDestroySurface)(EGLDisplay, EGLSurface) = {};
 HYBRIS_VISIBILITY EGLBoolean eglDestroySurface(EGLDisplay dpy,
                                                EGLSurface surface) {
+  static PFNEGLDESTROYSURFACEPROC s_eglDestroySurface = {};
   HYBRIS_DLSYM(eglDestroySurface);
   assert(s_eglDestroySurface);
 
@@ -658,11 +731,18 @@ HYBRIS_VISIBILITY EGLBoolean eglQuerySurface(EGLDisplay dpy, EGLSurface surface,
   }
   auto egl_surface = EglSurface::From(surface);
   surface = egl_surface->GetSurface();
-  auto ret = s_eglQuerySurface(dpy, surface, attribute, value);
-  if (ret && egl_surface->IsWindow() && attribute == EGL_SURFACE_TYPE) {
-    *value |= EGL_WINDOW_BIT;
+  if (attribute == EGL_NATIVE_VISUAL_TYPE) {
+    attribute = EGL_NATIVE_VISUAL_ID;
   }
-  return ret;
+  if (auto ret = s_eglQuerySurface(dpy, surface, attribute, value); ret) {
+    if (attribute == EGL_SURFACE_TYPE) {
+      *value |= egl_surface->IsWindow() ? EGL_WINDOW_BIT : 0;
+    } else if (attribute == EGL_NATIVE_VISUAL_ID) {
+      *value = get_hal_from_gbm_format(*value);
+    }
+    return ret;
+  }
+  return EGL_FALSE;
 }
 
 HYBRIS_VISIBILITY EGLBoolean eglSwapBuffers(EGLDisplay dpy,
@@ -878,4 +958,16 @@ HYBRIS_VISIBILITY EGLBoolean eglDestroyImage(EGLDisplay dpy, EGLImageKHR img) {
   HYBRIS_DLSYM(eglDestroyImage);
   assert(s_eglDestroyImage);
   return EglDestroyImage(dpy, img, s_eglDestroyImage);
+}
+
+HYBRIS_VISIBILITY EGLSurface eglCreatePlatformWindowSurface(
+    EGLDisplay dpy, EGLConfig config, void *native_window,
+    const EGLAttrib *attrib_list) {
+  static PFNEGLCREATEPLATFORMWINDOWSURFACEPROC
+      s_eglCreatePlatformWindowSurface = {};
+  HYBRIS_DLSYM(eglCreatePlatformWindowSurface);
+  assert(s_eglCreatePlatformWindowSurface);
+  // TODO: adapt
+  return s_eglCreatePlatformWindowSurface(dpy, config, native_window,
+                                          attrib_list);
 }
