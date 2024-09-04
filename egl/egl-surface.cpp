@@ -16,9 +16,13 @@ std::mutex surface_mtx{};
 
 } // namespace
 
+extern PFNEGLQUERYSURFACEPROC s_eglQuerySurface;
+extern PFNEGLCREATEPBUFFERSURFACEPROC s_eglCreatePbufferSurface;
+extern PFNEGLDESTROYSURFACEPROC s_eglDestroySurface;
+
 uint32_t EglSurface::GetSurfaceWidth() const {
   GLint width = {};
-  if (auto ret = eglQuerySurface(display_, real_surface_, EGL_WIDTH, &width);
+  if (auto ret = s_eglQuerySurface(display_, real_surface_, EGL_WIDTH, &width);
       ret) {
     return width;
   }
@@ -27,7 +31,8 @@ uint32_t EglSurface::GetSurfaceWidth() const {
 
 uint32_t EglSurface::GetSurfaceHeight() const {
   GLint height = {};
-  if (auto ret = eglQuerySurface(display_, real_surface_, EGL_HEIGHT, &height);
+  if (auto ret =
+          s_eglQuerySurface(display_, real_surface_, EGL_HEIGHT, &height);
       ret) {
     return height;
   }
@@ -96,14 +101,17 @@ void EglSurface::CancelBuffer() {
   }
 }
 
+extern PFNEGLCREATEPBUFFERSURFACEPROC s_eglCreatePbufferSurface;
+extern PFNEGLDESTROYSURFACEPROC s_eglDestroySurface;
 void EglSurface::UpdateSurface() {
   assert(real_surface_);
   auto width = GetWindowWidth();
   auto height = GetWindowHeight();
   if (GetSurfaceWidth() != width || GetSurfaceHeight() != height) {
-    eglDestroySurface(display_, real_surface_);
+    s_eglDestroySurface(display_, real_surface_);
     UpdateSurfaceSize(width, height);
-    real_surface_ = eglCreatePbufferSurface(display_, config_, attribs_.data());
+    real_surface_ =
+        s_eglCreatePbufferSurface(display_, config_, attribs_.data());
     assert(real_surface_);
   }
 }

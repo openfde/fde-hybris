@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -41,6 +42,9 @@ static void *hybris_dlsym(void **fptr, const char *sym) {
   if (*fptr == NULL) {
     void *handle = hybris_open_library();
     *fptr = dlsym(handle, sym);
+    if (!(*fptr)) {
+      ALOGV("dlsym %s: %s", sym, dlerror());
+    }
   }
   return *fptr;
 }
@@ -181,17 +185,24 @@ HYBRIS_IMPLEMENT_FUNCTION3(EGLBoolean, eglWaitSync, EGLDisplay, EGLSync,
                            EGLint);
 }
 
+PFNEGLGETERRORPROC s_eglGetError = {};
+
 namespace {
 
 auto gralloc = u_gralloc_create(U_GRALLOC_TYPE_LIBDRM);
 
+PFNEGLGETPLATFORMDISPLAYPROC s_eglGetPlatformDisplay = {};
 EGLDisplay eglGetPlatformDisplayAdapter(EGLenum platform, void *native_display,
                                         const EGLAttrib *attrib_list) {
-  static EGLDisplay (*s_eglGetPlatformDisplay)(EGLenum, void *,
-                                               const EGLAttrib *) = {};
   HYBRIS_DLSYM(eglGetPlatformDisplay);
   if (!s_eglGetPlatformDisplay) {
     display::SetDisplayError(EGL_BAD_PARAMETER);
+    return EGL_NO_DISPLAY;
+  }
+
+  if (platform != EGL_PLATFORM_ANDROID_KHR) {
+    display::SetDisplayError(EGL_BAD_PARAMETER);
+    ALOGW("Do not support platform 0x%04X", platform);
     return EGL_NO_DISPLAY;
   }
 
@@ -206,10 +217,13 @@ EGLDisplay eglGetPlatformDisplayAdapter(EGLenum platform, void *native_display,
           real_platform, real_native_display, attrib_list);
       egl_display != EGL_NO_DISPLAY) {
     display::InsertDisplayInfo(egl_display, real_native_display);
+    return egl_display;
   } else if (real_native_display != native_display && real_native_display) {
     gbm_device_destroy(reinterpret_cast<gbm_device *>(real_native_display));
   }
-
+  HYBRIS_DLSYM(eglGetError);
+  ALOGD("eglGetPlatformDisplay platform 0x%04X failed : 0x%04X", platform,
+        s_eglGetError());
   return EGL_NO_DISPLAY;
 }
 
@@ -244,27 +258,42 @@ std::vector<EGLint> EglCopyAttribs(const EGLint *attrib_list) {
   return attribs;
 }
 
-// EGL_ANDROID_create_native_client_buffer
-EGLClientBuffer eglCreateNativeClientBufferANDROID(const EGLint *attrib_list) {
-  (void)attrib_list;
-  assert(false);
-  return nullptr;
+std::vector<EGLAttrib> EglConvertAttribs(const EGLint *attrib_list) {
+  std::vector<EGLAttrib> attribs;
+  if (attrib_list) {
+    while (*attrib_list != EGL_NONE) {
+      attribs.push_back(attrib_list[0]);
+      attribs.push_back(attrib_list[1]);
+      attrib_list += 2;
+    }
+  }
+  attribs.push_back(EGL_NONE);
+  return attribs;
 }
 
+// EGL_ANDROID_create_native_client_buffer
+// EGLClientBuffer eglCreateNativeClientBufferANDROID(const EGLint *attrib_list)
+// {
+//   (void)attrib_list;
+//   assert(false);
+//   return nullptr;
+// }
+
 // EGL_ANDROID_get_native_client_buffer
-EGLClientBuffer
-eglGetNativeClientBufferANDROID(const struct AHardwareBuffer *buffer) {
-  (void)buffer;
-  assert(false);
-  return nullptr;
-}
+// EGLClientBuffer
+// eglGetNativeClientBufferANDROID(const struct AHardwareBuffer *buffer) {
+//   (void)buffer;
+//   ALOGD("Not implement %s", __func__);
+//   return nullptr;
+// }
 
 EGLBoolean EglDestroyImage(EGLDisplay dpy, EGLImageKHR img,
                            PFNEGLDESTROYIMAGEKHRPROC destroy_image) {
-  // auto native_buffer = find by img;
-  // auto hardware_buffer =
-  // ANativeWindowBuffer_getHardwareBuffer(native_buffer);
-  // AHardwareBuffer_release(hardware_buffer);
+  ANativeWindowBuffer *native_buffer = {}; // find by img
+  if (native_buffer) {
+    auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(native_buffer);
+    AHardwareBuffer_release(hardware_buffer);
+  }
   return destroy_image(dpy, img);
 }
 
@@ -290,14 +319,16 @@ EGLBoolean FillAttribs(const ANativeWindowBuffer *native_buffer,
   attribs[atti++] = native_buffer->height;
   attribs[atti++] = EGL_LINUX_DRM_FOURCC_EXT;
   attribs[atti++] = buffer_basic_info.drm_fourcc;
-  attribs[atti++] = EGL_YUV_COLOR_SPACE_HINT_EXT;
-  attribs[atti++] = buffer_color_info.yuv_color_space;
-  attribs[atti++] = EGL_SAMPLE_RANGE_HINT_EXT;
-  attribs[atti++] = buffer_color_info.sample_range;
-  attribs[atti++] = EGL_YUV_CHROMA_HORIZONTAL_SITING_HINT_EXT;
-  attribs[atti++] = buffer_color_info.horizontal_siting;
-  attribs[atti++] = EGL_YUV_CHROMA_VERTICAL_SITING_HINT_EXT;
-  attribs[atti++] = buffer_color_info.vertical_siting;
+
+  // egl mybe return bad attribute when uncomment below statements.
+  // attribs[atti++] = EGL_SAMPLE_RANGE_HINT_EXT;
+  // attribs[atti++] = buffer_color_info.sample_range;
+  // attribs[atti++] = EGL_YUV_COLOR_SPACE_HINT_EXT;
+  // attribs[atti++] = buffer_color_info.yuv_color_space;
+  // attribs[atti++] = EGL_YUV_CHROMA_HORIZONTAL_SITING_HINT_EXT;
+  // attribs[atti++] = buffer_color_info.horizontal_siting;
+  // attribs[atti++] = EGL_YUV_CHROMA_VERTICAL_SITING_HINT_EXT;
+  // attribs[atti++] = buffer_color_info.vertical_siting;
 
   auto n_planes = buffer_basic_info.num_planes;
   auto fds = buffer_basic_info.fds;
@@ -410,6 +441,41 @@ int32_t get_hal_from_gbm_format(int32_t gbm_format) {
   return EGL_DONT_CARE;
 }
 
+#define StrError(error)                                                        \
+  { error, #error }
+
+std::map<EGLint, std::string> egl_str_errors{
+    StrError(EGL_SUCCESS),
+    StrError(EGL_NOT_INITIALIZED),
+    StrError(EGL_BAD_ACCESS),
+    StrError(EGL_BAD_ALLOC),
+    StrError(EGL_BAD_ATTRIBUTE),
+    StrError(EGL_BAD_CONFIG),
+    StrError(EGL_BAD_CONTEXT),
+    StrError(EGL_BAD_CURRENT_SURFACE),
+    StrError(EGL_BAD_DISPLAY),
+    StrError(EGL_BAD_MATCH),
+    StrError(EGL_BAD_NATIVE_PIXMAP),
+    StrError(EGL_BAD_NATIVE_WINDOW),
+    StrError(EGL_BAD_PARAMETER),
+    StrError(EGL_BAD_SURFACE),
+    StrError(EGL_CONTEXT_LOST),
+    StrError(EGL_BAD_OUTPUT_LAYER_EXT),
+    StrError(EGL_BAD_OUTPUT_PORT_EXT),
+};
+#undef StrError
+const char *EglStrError() {
+  HYBRIS_DLSYM(eglGetError);
+  assert(s_eglGetError);
+
+  auto error = s_eglGetError();
+
+  if (auto it = egl_str_errors.find(error); it != egl_str_errors.end()) {
+    return it->second.c_str();
+  }
+  return "";
+}
+
 } // namespace
 
 HYBRIS_VISIBILITY EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id) {
@@ -418,8 +484,8 @@ HYBRIS_VISIBILITY EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id) {
     return EGL_NO_DISPLAY;
   }
 
-  return eglGetPlatformDisplayAdapter(EGL_PLATFORM_GBM_KHR, EGL_DEFAULT_DISPLAY,
-                                      nullptr);
+  return eglGetPlatformDisplayAdapter(EGL_PLATFORM_ANDROID_KHR,
+                                      EGL_DEFAULT_DISPLAY, nullptr);
 }
 
 HYBRIS_VISIBILITY EGLDisplay eglGetPlatformDisplay(
@@ -438,28 +504,30 @@ HYBRIS_VISIBILITY EGLDisplay eglGetPlatformDisplay(
   return eglGetPlatformDisplayAdapter(platform, native_display, attrib_list);
 }
 
+PFNEGLINITIALIZEPROC s_eglInitialize = {};
 HYBRIS_VISIBILITY EGLBoolean eglInitialize(EGLDisplay dpy, EGLint *major,
                                            EGLint *minor) {
-  static EGLBoolean (*s_eglInitialize)(EGLDisplay, EGLint *, EGLint *) = {};
   HYBRIS_DLSYM(eglInitialize);
   if (!s_eglInitialize) {
     display::SetDisplayError(EGL_NOT_INITIALIZED);
     return EGL_FALSE;
   }
-  if (auto ret = eglInitialize(dpy, major, minor); ret) {
+  if (auto ret = s_eglInitialize(dpy, major, minor); ret) {
     constexpr EGLint kSupportMaxMinor = 2;
     if (minor && *minor > kSupportMaxMinor) {
       *minor = kSupportMaxMinor;
     }
     return EGL_TRUE;
   }
+  HYBRIS_DLSYM(eglGetError);
+  ALOGW("eglInitialize display %p failed : 0x%04X", dpy, s_eglGetError());
   return EGL_FALSE;
 }
 
+PFNEGLGETCONFIGSPROC s_eglGetConfigs = {};
 HYBRIS_VISIBILITY EGLBoolean eglGetConfigs(EGLDisplay dpy, EGLConfig *configs,
                                            EGLint config_size,
                                            EGLint *num_config) {
-  static PFNEGLGETCONFIGSPROC s_eglGetConfigs = {};
   HYBRIS_DLSYM(eglGetConfigs);
   if (!s_eglGetConfigs) {
     display::SetDisplayError(EGL_NOT_INITIALIZED);
@@ -468,12 +536,12 @@ HYBRIS_VISIBILITY EGLBoolean eglGetConfigs(EGLDisplay dpy, EGLConfig *configs,
   return s_eglGetConfigs(dpy, configs, config_size, num_config);
 }
 
+PFNEGLCHOOSECONFIGPROC s_eglChooseConfig = {};
 HYBRIS_VISIBILITY EGLBoolean eglChooseConfig(EGLDisplay dpy,
                                              const EGLint *attrib_list,
                                              EGLConfig *configs,
                                              EGLint config_size,
                                              EGLint *num_config) {
-  static PFNEGLCHOOSECONFIGPROC s_eglChooseConfig = {};
   HYBRIS_DLSYM(eglChooseConfig);
   assert(s_eglChooseConfig);
   if (!attrib_list || attrib_list[0] == EGL_NONE) {
@@ -484,9 +552,9 @@ HYBRIS_VISIBILITY EGLBoolean eglChooseConfig(EGLDisplay dpy,
 
   for (auto it = attribs.begin(); *it != EGL_NONE; it += 2) {
     if (*it == EGL_SURFACE_TYPE) {
-      auto &type = *std::next(it);
-      type &= ~EGL_WINDOW_BIT;
-      type |= EGL_PBUFFER_BIT;
+      // auto &type = *std::next(it);
+      // type &= ~EGL_WINDOW_BIT;
+      // type |= EGL_PBUFFER_BIT;
     } else if (*it == EGL_NATIVE_VISUAL_ID) {
       *std::next(it) = get_gbm_from_hal_format(*std::next(it));
     } else if (*it == EGL_NATIVE_VISUAL_TYPE) {
@@ -497,10 +565,9 @@ HYBRIS_VISIBILITY EGLBoolean eglChooseConfig(EGLDisplay dpy,
                            num_config);
 }
 
+PFNEGLMAKECURRENTPROC s_eglMakeCurrent = {};
 HYBRIS_VISIBILITY EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLSurface draw,
                                             EGLSurface read, EGLContext ctx) {
-  static EGLBoolean (*s_eglMakeCurrent)(EGLDisplay, EGLSurface, EGLSurface,
-                                        EGLContext) = {};
   EGLSurface real_draw = EGL_NO_SURFACE;
   EGLSurface real_read = EGL_NO_SURFACE;
   HYBRIS_DLSYM(eglMakeCurrent);
@@ -514,8 +581,7 @@ HYBRIS_VISIBILITY EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLSurface draw,
   return s_eglMakeCurrent(dpy, real_draw, real_read, ctx);
 }
 
-static EGLSurface (*s_eglCreatePbufferSurface)(EGLDisplay dpy, EGLConfig config,
-                                               const EGLint *attrib_list) = {};
+PFNEGLCREATEPBUFFERSURFACEPROC s_eglCreatePbufferSurface = {};
 HYBRIS_VISIBILITY EGLSurface eglCreatePbufferSurface(
     EGLDisplay dpy, EGLConfig config, const EGLint *attrib_list) {
   HYBRIS_DLSYM(eglCreatePbufferSurface);
@@ -527,11 +593,13 @@ HYBRIS_VISIBILITY EGLSurface eglCreatePbufferSurface(
     EglSurface::InsertSurface(egl_surface);
     return egl_surface;
   }
+  HYBRIS_DLSYM(eglGetError);
+  ALOGW("eglCreatePbufferSurface display %p failed : 0x%04X", dpy,
+        s_eglGetError());
   return EGL_NO_SURFACE;
 }
 
-static PFNEGLCREATEWINDOWSURFACEPROC s_eglCreateWindowSurface = {};
-
+PFNEGLCREATEWINDOWSURFACEPROC s_eglCreateWindowSurface = {};
 HYBRIS_VISIBILITY EGLSurface eglCreateWindowSurface(EGLDisplay dpy,
                                                     EGLConfig config,
                                                     EGLNativeWindowType win,
@@ -553,14 +621,15 @@ HYBRIS_VISIBILITY EGLSurface eglCreateWindowSurface(EGLDisplay dpy,
   auto egl_surface = new EglSurface{dpy, win};
   EGLint width = egl_surface->GetWindowWidth(); // get from ANativeWindow
   EGLint height = egl_surface->GetWindowHeight();
-  // EGLint format = egl_surface->GetFormat();
-  // EGLint flags = egl_surface->GetFlags();
   std::vector<EGLint> pbuf_attribs = {EGL_WIDTH, width, EGL_HEIGHT, height};
   EGLAppendAttribs(attrib_list, pbuf_attribs);
 
   if (auto surface = s_eglCreatePbufferSurface(dpy, config, &pbuf_attribs[0]);
       surface == EGL_NO_SURFACE) {
     delete egl_surface;
+    HYBRIS_DLSYM(eglGetError);
+    ALOGW("eglCreateWindowSurface display %p failed : 0x%04X", dpy,
+          s_eglGetError());
     return EGL_NO_SURFACE;
   } else {
     egl_surface->SetReal(surface);
@@ -569,6 +638,8 @@ HYBRIS_VISIBILITY EGLSurface eglCreateWindowSurface(EGLDisplay dpy,
     egl_surface->DequeueBuffer();
   }
 
+  // EGLint format = egl_surface->GetFormat();
+  // EGLint flags = egl_surface->GetUsage();
   // auto gbm_dev = reinterpret_cast<gbm_device *>(display_info->real_display);
   // auto real_surface = gbm_surface_create(gbm_dev, width, height, format,
   // flags); if (!real_surface) {
@@ -582,19 +653,17 @@ HYBRIS_VISIBILITY EGLSurface eglCreateWindowSurface(EGLDisplay dpy,
   //         dpy, config, (EGLNativeWindowType)real_surface, attrib_list);
   //     surface == EGL_NO_SURFACE) {
   //   gbm_surface_destroy(real_surface);
-  //   delete real_surface;
   //   return EGL_NO_SURFACE;
-  // }
-  // else{
+  // } else {
   //   egl_surface->SetReal(surface, (EGLNativeWindowType)real_surface);
   // }
 
   return egl_surface;
 }
 
+PFNEGLDESTROYSURFACEPROC s_eglDestroySurface = {};
 HYBRIS_VISIBILITY EGLBoolean eglDestroySurface(EGLDisplay dpy,
                                                EGLSurface surface) {
-  static PFNEGLDESTROYSURFACEPROC s_eglDestroySurface = {};
   HYBRIS_DLSYM(eglDestroySurface);
   assert(s_eglDestroySurface);
 
@@ -609,8 +678,7 @@ HYBRIS_VISIBILITY EGLBoolean eglDestroySurface(EGLDisplay dpy,
   return EGL_FALSE;
 }
 
-static EGLBoolean (*s_eglGetConfigAttrib)(EGLDisplay, EGLConfig, EGLint,
-                                          EGLint *);
+PFNEGLGETCONFIGATTRIBPROC s_eglGetConfigAttrib = {};
 HYBRIS_VISIBILITY EGLBoolean eglGetConfigAttrib(EGLDisplay dpy,
                                                 EGLConfig config,
                                                 EGLint attribute,
@@ -642,7 +710,7 @@ HYBRIS_VISIBILITY EGLBoolean eglGetConfigAttrib(EGLDisplay dpy,
   return ret;
 }
 
-static EGLSurface (*s_eglGetCurrentSurface)(EGLint) = {};
+PFNEGLGETCURRENTSURFACEPROC s_eglGetCurrentSurface = {};
 HYBRIS_VISIBILITY EGLSurface eglGetCurrentSurface(EGLint readdraw) {
   HYBRIS_DLSYM(eglGetCurrentSurface);
   assert(s_eglGetCurrentSurface);
@@ -651,7 +719,6 @@ HYBRIS_VISIBILITY EGLSurface eglGetCurrentSurface(EGLint readdraw) {
 }
 
 HYBRIS_VISIBILITY EGLint eglGetError(void) {
-  static EGLint (*s_eglGetError)();
   HYBRIS_DLSYM(eglGetError);
   assert(s_eglGetError);
   if (auto error = s_eglGetError(); error != EGL_SUCCESS) {
@@ -660,38 +727,35 @@ HYBRIS_VISIBILITY EGLint eglGetError(void) {
   return display::GetDisplayError();
 }
 
+PFNEGLGETPROCADDRESSPROC s_eglGetProcAddress = {};
 HYBRIS_VISIBILITY __eglMustCastToProperFunctionPointerType
 eglGetProcAddress(const char *procname) {
-  static PFNEGLGETPROCADDRESSPROC s_eglGetProcAddress = {};
   HYBRIS_DLSYM(eglGetProcAddress);
   assert(s_eglGetProcAddress);
-
+  auto addr = s_eglGetProcAddress(procname);
   if (strcmp(procname, "eglDupNativeFenceFDANDROID") == 0) {
     // not support EGL_ANDROID_native_fence_sync extension
-    return nullptr;
-  }
-
-  if (strcmp(procname, "eglSetBlobCacheFuncsANDROID") == 0) {
+  } else if (strcmp(procname, "eglSetBlobCacheFuncsANDROID") == 0) {
     // not support EGL_ANDROID_blob_cache extension
-    return nullptr;
-  }
-
-  if (strcmp(procname, "eglPresentationTimeANDROID") == 0) {
+  } else if (strcmp(procname, "eglPresentationTimeANDROID") == 0) {
     // not support EGL_ANDROID_presentation_time extension
-    return nullptr;
-  }
-
-  if (strcmp(procname, "eglCreateNativeClientBufferANDROID") == 0) {
+  } else if (strcmp(procname, "eglCreateNativeClientBufferANDROID") == 0) {
+    // return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
+    //     eglCreateNativeClientBufferANDROID);
+  } else if (strcmp(procname, "eglGetNativeClientBufferANDROID") == 0) {
+    // return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
+    //     eglGetNativeClientBufferANDROID);
+  } else if (strcmp(procname, "eglCreateImageKHR") == 0) {
     return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
-        eglCreateNativeClientBufferANDROID);
-  }
-
-  if (strcmp(procname, "eglGetNativeClientBufferANDROID") == 0) {
+        eglCreateImageKHR);
+  } else if (strcmp(procname, "eglDestroyImageKHR") == 0) {
     return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
-        eglGetNativeClientBufferANDROID);
+        eglDestroyImageKHR);
   }
-
-  return s_eglGetProcAddress(procname);
+  if (!addr) {
+    ALOGD("Not implement %s", procname);
+  }
+  return addr;
 }
 
 HYBRIS_VISIBILITY const char *eglQueryString(EGLDisplay dpy, EGLint name) {
@@ -721,9 +785,9 @@ HYBRIS_VISIBILITY const char *eglQueryString(EGLDisplay dpy, EGLint name) {
   return strs;
 }
 
+PFNEGLQUERYSURFACEPROC s_eglQuerySurface = {};
 HYBRIS_VISIBILITY EGLBoolean eglQuerySurface(EGLDisplay dpy, EGLSurface surface,
                                              EGLint attribute, EGLint *value) {
-  static PFNEGLQUERYSURFACEPROC s_eglQuerySurface = {};
   HYBRIS_DLSYM(eglQuerySurface);
   assert(s_eglQuerySurface);
   if (surface == EGL_NO_SURFACE) {
@@ -742,6 +806,10 @@ HYBRIS_VISIBILITY EGLBoolean eglQuerySurface(EGLDisplay dpy, EGLSurface surface,
     }
     return ret;
   }
+  HYBRIS_DLSYM(eglGetError);
+  ALOGD(
+      "eglQuerySurface display %p surface %p attribute 0x%04X failed : 0x%04X",
+      dpy, surface, attribute, s_eglGetError());
   return EGL_FALSE;
 }
 
@@ -868,51 +936,124 @@ HYBRIS_VISIBILITY EGLSurface eglCreatePbufferFromClientBuffer(
       s_eglCreatePbufferFromClientBuffer = {};
   HYBRIS_DLSYM(eglCreatePbufferFromClientBuffer);
   assert(s_eglCreatePbufferFromClientBuffer);
-
-  // TODO: set egl error
+  display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
+  ALOGD("Not implement");
   return EGL_NO_SURFACE;
 }
 
-HYBRIS_VISIBILITY EGLImageKHR eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx,
-                                                EGLenum target,
-                                                EGLClientBuffer buffer,
-                                                const EGLint *attrib_list) {
-  static PFNEGLCREATEIMAGEKHRPROC s_eglCreateImageKHR = {};
-  HYBRIS_DLSYM(eglCreateImageKHR);
-  assert(s_eglCreateImageKHR);
+template <typename AttribType>
+using CreateImageT = void *(*)(EGLDisplay, EGLContext, EGLenum, EGLClientBuffer,
+                               const AttribType *);
 
+PFNEGLCREATEIMAGEKHRPROC s_eglCreateImageKHR = {};
+
+PFNEGLCREATEIMAGEKHRPROC GetCreateImageKHRAddr() {
+  HYBRIS_DLSYM(eglCreateImageKHR);
+  if (!s_eglCreateImageKHR) {
+    HYBRIS_DLSYM(eglGetProcAddress);
+    assert(s_eglGetProcAddress);
+    s_eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(
+        s_eglGetProcAddress("eglCreateImageKHR"));
+  }
+  return s_eglCreateImageKHR;
+}
+
+void *CreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum target,
+                     EGLClientBuffer buffer, const EGLint *attrib_list) {
+  HYBRIS_DLSYM(eglCreateImageKHR);
+  if (!s_eglCreateImageKHR) {
+    HYBRIS_DLSYM(eglGetProcAddress);
+    assert(s_eglGetProcAddress);
+    s_eglCreateImageKHR = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(
+        s_eglGetProcAddress("eglCreateImageKHR"));
+  }
+  if (!s_eglCreateImageKHR) {
+    // display::SetDisplayError(dpy, EGL_BAD_MATCH);
+    ALOGD("eglCreateImageKHR not found");
+    return nullptr;
+  }
+
+  return s_eglCreateImageKHR(dpy, ctx, target, buffer, attrib_list);
+}
+
+PFNEGLCREATEIMAGEPROC s_eglCreateImage = {};
+void *CreateImage(EGLDisplay dpy, EGLContext ctx, EGLenum target,
+                  EGLClientBuffer buffer, const EGLAttrib *attrib_list) {
+  HYBRIS_DLSYM(eglCreateImage);
+  assert(s_eglCreateImage);
+  return s_eglCreateImage(dpy, ctx, target, buffer, attrib_list);
+}
+
+template <typename AttribType>
+void *CreateImageAdapter(EGLDisplay dpy, EGLContext ctx, EGLenum target,
+                         EGLClientBuffer buffer, const AttribType *attrib_list,
+                         CreateImageT<AttribType> create_image) {
   if (target != EGL_NATIVE_BUFFER_ANDROID) {
-    return s_eglCreateImageKHR(dpy, ctx, target, buffer, attrib_list);
+    ALOGV("target = 0x%04X", target);
+    return create_image(dpy, ctx, target, buffer, attrib_list);
   }
   auto native_buffer = reinterpret_cast<ANativeWindowBuffer *>(buffer);
   if (!native_buffer ||
       native_buffer->common.magic != ANDROID_NATIVE_BUFFER_MAGIC ||
       native_buffer->common.version != sizeof(*native_buffer)) {
     display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
-    return EGL_NO_IMAGE;
+    if (native_buffer) {
+      ALOGD("Not valid ANativeWindowBuffer: magic = 0x%04X, version = %d",
+            native_buffer->common.magic, native_buffer->common.magic);
+    } else {
+      ALOGD("Not valid ANativeWindowBuffer, native buffer is null");
+    }
+
+    return nullptr;
   }
 
-  EGLint attribs[47];
+  AttribType attribs[47];
   if (!FillAttribs(native_buffer, sizeof(attribs) / sizeof(*attribs),
                    attribs)) {
     display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
-    return EGL_NO_IMAGE_KHR;
+    ALOGD("Cannot Get native buffer info %p", native_buffer);
+    return nullptr;
   }
 
-  if (auto image = s_eglCreateImageKHR(dpy, EGL_NO_CONTEXT,
-                                       EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
-      image != EGL_NO_IMAGE_KHR) {
+  if (auto image = create_image(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT,
+                                nullptr, attribs);
+      image) {
     auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(native_buffer);
     AHardwareBuffer_acquire(hardware_buffer);
     return image;
   }
-  return EGL_NO_IMAGE_KHR;
+  ALOGD("eglCreateImage dpy %p target 0x%04X failed : %s", dpy, target,
+        EglStrError());
+  return nullptr;
+}
+
+HYBRIS_VISIBILITY EGLImageKHR eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx,
+                                                EGLenum target,
+                                                EGLClientBuffer buffer,
+                                                const EGLint *attrib_list) {
+  s_eglCreateImageKHR = GetCreateImageKHRAddr();
+  if (!s_eglCreateImageKHR) {
+    auto attribs = EglConvertAttribs(attrib_list);
+    return eglCreateImage(dpy, ctx, target, buffer, attribs.data());
+  }
+  auto image =
+      CreateImageAdapter(dpy, ctx, target, buffer, attrib_list, CreateImageKHR);
+  return reinterpret_cast<EGLImageKHR>(image);
 }
 
 HYBRIS_VISIBILITY EGLBoolean eglDestroyImageKHR(EGLDisplay dpy,
                                                 EGLImageKHR img) {
   PFNEGLDESTROYIMAGEKHRPROC s_eglDestroyImageKHR = {};
   HYBRIS_DLSYM(eglDestroyImageKHR);
+  if (!s_eglCreateImageKHR) {
+    HYBRIS_DLSYM(eglGetProcAddress);
+    assert(s_eglGetProcAddress);
+    s_eglDestroyImageKHR = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(
+        s_eglGetProcAddress("eglDestroyImageKHR"));
+  }
+  if (!s_eglDestroyImageKHR) {
+    return eglDestroyImage(dpy, img);
+  }
   assert(s_eglDestroyImageKHR);
   return EglDestroyImage(dpy, img, s_eglDestroyImageKHR);
 }
@@ -921,53 +1062,27 @@ HYBRIS_VISIBILITY EGLImage eglCreateImage(EGLDisplay dpy, EGLContext ctx,
                                           EGLenum target,
                                           EGLClientBuffer buffer,
                                           const EGLAttrib *attrib_list) {
-  static PFNEGLCREATEIMAGEPROC s_eglCreateImage = {};
-  HYBRIS_DLSYM(eglCreateImage);
-  assert(s_eglCreateImage);
-
-  if (target != EGL_NATIVE_BUFFER_ANDROID) {
-    return s_eglCreateImage(dpy, ctx, target, buffer, attrib_list);
-  }
-  auto native_buffer = reinterpret_cast<ANativeWindowBuffer *>(buffer);
-  if (!native_buffer ||
-      native_buffer->common.magic != ANDROID_NATIVE_BUFFER_MAGIC ||
-      native_buffer->common.version != sizeof(*native_buffer)) {
-    display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
-    return EGL_NO_IMAGE;
-  }
-
-  EGLAttrib attribs[47];
-  if (!FillAttribs(native_buffer, sizeof(attribs) / sizeof(*attribs),
-                   attribs)) {
-    display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
-    return EGL_NO_IMAGE;
-  }
-
-  if (auto image = s_eglCreateImage(dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT,
-                                    nullptr, attribs);
-      image != EGL_NO_IMAGE) {
-    auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(native_buffer);
-    AHardwareBuffer_acquire(hardware_buffer);
-    return image;
-  }
-  return EGL_NO_IMAGE;
+  auto image =
+      CreateImageAdapter(dpy, ctx, target, buffer, attrib_list, CreateImage);
+  return reinterpret_cast<EGLImage>(image);
 }
 
+PFNEGLDESTROYIMAGEPROC s_eglDestroyImage = {};
 HYBRIS_VISIBILITY EGLBoolean eglDestroyImage(EGLDisplay dpy, EGLImageKHR img) {
-  PFNEGLDESTROYIMAGEPROC s_eglDestroyImage = {};
   HYBRIS_DLSYM(eglDestroyImage);
   assert(s_eglDestroyImage);
   return EglDestroyImage(dpy, img, s_eglDestroyImage);
 }
 
+PFNEGLCREATEPLATFORMWINDOWSURFACEPROC
+s_eglCreatePlatformWindowSurface = {};
 HYBRIS_VISIBILITY EGLSurface eglCreatePlatformWindowSurface(
     EGLDisplay dpy, EGLConfig config, void *native_window,
     const EGLAttrib *attrib_list) {
-  static PFNEGLCREATEPLATFORMWINDOWSURFACEPROC
-      s_eglCreatePlatformWindowSurface = {};
   HYBRIS_DLSYM(eglCreatePlatformWindowSurface);
   assert(s_eglCreatePlatformWindowSurface);
   // TODO: adapt
+  ALOGD("Not adapt");
   return s_eglCreatePlatformWindowSurface(dpy, config, native_window,
                                           attrib_list);
 }

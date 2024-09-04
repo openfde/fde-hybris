@@ -107,6 +107,7 @@ cc_defaults {
         "libnativewindow",
         "libhardware",
         "libGLESv2_proxy",
+        "libGLESv1_CM_proxy",
     ],
 
     static_libs: [
