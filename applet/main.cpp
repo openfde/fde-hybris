@@ -2,6 +2,8 @@
 #include <EGL/eglext.h>
 #include <GL/gl.h>
 
+#include "egl/egl-proxy.h"
+
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -16,6 +18,11 @@ int32_t main(int32_t argc, char *argv[]) {
   if (auto val = getenv("EGL_PLATFORM")) {
     fprintf(stderr, "EGL_PLATFORM=%s\n", val);
   }
+
+  // auto lib_handle = egl::EglProxy::LoadLibrary();
+  // auto proxy = std::make_shared<egl::EglProxy>(lib_handle);
+  // proxy->Initialize();
+  egl::EglProxy::Instance();
 
   auto egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
 
@@ -61,6 +68,13 @@ int32_t main(int32_t argc, char *argv[]) {
     eglMakeCurrent(egl_display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     eglDestroyContext(egl_display, egl_context);
   }
+
+  auto create_image = reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(
+      eglGetProcAddress("eglCreateImageKHR"));
+
+  assert(create_image);
+  create_image(egl_display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID, nullptr,
+               nullptr);
 
   eglTerminate(egl_display);
   return 0;

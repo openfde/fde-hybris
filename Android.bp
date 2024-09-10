@@ -3,10 +3,13 @@ filegroup {
     name: "egl_core_files",
 
     srcs: [
-        "egl/display.cpp",
-        "egl/egl-surface.cpp",
         "egl/egl.cpp",
         "egl/libgbm.c",
+        "egl/egl-surface.cpp",
+        "egl/egl-proxy.cpp",
+        "egl/egl-display.cpp",
+        "egl/egl-misc.cpp",
+        "egl/egl-image.cpp",
     ],
 }
 

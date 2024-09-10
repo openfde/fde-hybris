@@ -25,6 +25,7 @@ set(CMAKE_CXX_COMPILER ${CMAKE_C_ANDROID_TOOLCHAIN_PREFIX}clang++)
 
 include_directories(include)
 include_directories(util)
+include_directories(.)
 
 add_subdirectory(egl)
 add_subdirectory(glesv1)

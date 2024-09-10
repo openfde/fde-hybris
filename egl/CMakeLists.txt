@@ -2,11 +2,21 @@ set(LIBBASENAME EGL_proxy)
 
 set(LIBSRC
   egl.cpp
-  display.cpp
-  display.h
+  # display.cpp
+  # display.h
 
   egl-surface.cpp
   egl-surface.h
+
+  egl-proxy.cpp
+  egl-proxy.h
+  egl-display.cpp
+  egl-display.h
+  egl-image.cpp
+  egl-image.h
+
+  egl-misc.cpp
+  egl-misc.h
 
   libgbm.c
 )
