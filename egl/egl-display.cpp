@@ -2,6 +2,7 @@
 
 #include <android/native_window.h>
 #include <fcntl.h>
+#include <log/log.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <vndk/window.h>
@@ -9,6 +10,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cassert>
+#include <iomanip>
+#include <set>
+#include <sstream>
 
 #include "egl-misc.h"
 #include "egl-proxy.h"
@@ -16,7 +20,44 @@
 
 namespace {
 constexpr char kGbmDevicePath[] = "/dev/dri/renderD128";
+
+std::map<EGLint, EGLint> kAndroidSpecialAttributes{
+    // EGL_ANDROID_framebuffer_target
+    {EGL_FRAMEBUFFER_TARGET_ANDROID, EGL_TRUE},
+    // EGL_ANDROID_recordable
+    {EGL_RECORDABLE_ANDROID, EGL_TRUE},
+    // EGL_NV_coverage_sample
+    {EGL_COVERAGE_SAMPLES_NV, 0},
+    {EGL_COVERAGE_BUFFERS_NV, 0},
+    // EGL_NV_depth_nonlinear
+    {EGL_DEPTH_ENCODING_NV, EGL_DEPTH_ENCODING_NONE_NV},
+    // EGL_EXT_pixel_format_float
+    {EGL_COLOR_COMPONENT_TYPE_EXT, EGL_COLOR_COMPONENT_TYPE_FIXED_EXT},
+};
+
+// if success return not null, or point to mismatch attribute position.
+EGLint *CheckAndFilterSpecialAttributes(
+    EGLint *attributes, const std::map<EGLint, EGLint> &special_attribs) {
+  auto attrib_count = egl::misc::EglAttrbCount(attributes);
+  auto attrib_end = attributes + (attrib_count * 2 + 1);
+  constexpr int32_t kStep = 2;
+  for (auto pos = (attrib_count - 1) * kStep; pos >= 0; pos -= kStep) {
+    auto curr_attrib = attributes + pos;
+    if (auto it = special_attribs.find(*curr_attrib);
+        it != special_attribs.end()) {
+      auto value = *(curr_attrib + 1);
+      if (value != EGL_DONT_CARE && it->second != value) {
+        return curr_attrib;
+      }
+      // remove special attribs
+      std::move(curr_attrib + kStep, attrib_end, curr_attrib);
+      attrib_end -= kStep;
+    }
+  }
+  return nullptr;
 }
+
+}  // namespace
 
 namespace egl {
 
@@ -289,6 +330,21 @@ EGLBoolean Display::SwapBuffers(EGLSurface egl_surf) {
   return EGL_FALSE;
 }
 
+EGLBoolean Display::ChooseConfig(const EGLint *attrib_list, EGLConfig *configs,
+                                 EGLint config_size, EGLint *num_config) {
+  auto const &api = proxy_->Api();
+  auto dpy = egl_dpy_.get();
+  return api.eglChooseConfig(dpy, attrib_list, configs, config_size,
+                             num_config);
+}
+
+EGLBoolean Display::GetConfigAttrib(EGLConfig config, EGLint attribute,
+                                    EGLint *value) {
+  auto const &api = proxy_->Api();
+  auto dpy = egl_dpy_.get();
+  return api.eglGetConfigAttrib(dpy, config, attribute, value);
+}
+
 EGLDisplay AndroidDisplay::GetPlatformDisplay(void *native_display,
                                               const EGLAttrib *attrib_list) {
   assert(proxy_);
@@ -315,10 +371,9 @@ Surface *AndroidDisplay::CreatePlatformWindowSurface(
   return nullptr;
 }
 
-EGLBoolean AndroidDisplay::eglChooseConfig(const EGLint *attrib_list,
-                                           EGLConfig *configs,
-                                           EGLint config_size,
-                                           EGLint *num_config) {
+EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
+                                        EGLConfig *configs, EGLint config_size,
+                                        EGLint *num_config) {
   auto const &api = proxy_->Api();
   auto dpy = egl_dpy_.get();
   if (!attrib_list || attrib_list[0] == EGL_NONE) {
@@ -326,6 +381,15 @@ EGLBoolean AndroidDisplay::eglChooseConfig(const EGLint *attrib_list,
                                num_config);
   }
   auto attribs = egl::misc::DupAttributes(attrib_list);
+
+  if (auto mismatch = CheckAndFilterSpecialAttributes(
+          attribs.data(), kAndroidSpecialAttributes);
+      mismatch) {
+    auto supported_value = kAndroidSpecialAttributes.find(*mismatch)->second;
+    ALOGD("eglChooseConfig attributes 0x%04X is 0x%08X, only support 0x%08X",
+          *mismatch, *(mismatch + 1), supported_value);
+    return EGL_FALSE;
+  }
 
   for (auto it = attribs.begin(); *it != EGL_NONE; it += 2) {
     if (*it == EGL_SURFACE_TYPE) {
@@ -338,8 +402,49 @@ EGLBoolean AndroidDisplay::eglChooseConfig(const EGLint *attrib_list,
       *std::next(it) = EGL_DONT_CARE;
     }
   }
-  return api.eglChooseConfig(dpy, attribs.data(), configs, config_size,
-                             num_config);
+
+  auto ret = api.eglChooseConfig(dpy, attribs.data(), configs, config_size,
+                                 num_config);
+  if (!ret) {
+    auto PrintAttibutes = [](const EGLint *attrib_list) -> std::string {
+      std::ostringstream oss;
+      oss.setf(std::ios::showbase | std::ios::uppercase);
+      if (attrib_list) {
+        for (auto attirbs = attrib_list; *attirbs != EGL_NONE; attirbs += 2) {
+          oss << std::hex << std::setw(4) << std::setfill('0') << attirbs[0]
+              << " = " << attirbs[1] << ", ";
+        }
+        oss << std::hex << std::setw(4) << std::setfill('0') << EGL_NONE;
+      }
+      return oss.str();
+    };
+
+    ALOGD("eglChooseConfig %s from attributes : %s",
+          proxy_->StrLastError().c_str(), PrintAttibutes(attrib_list).c_str());
+  }
+  return ret;
+}
+
+EGLBoolean AndroidDisplay::GetConfigAttrib(EGLConfig config, EGLint attribute,
+                                           EGLint *value) {
+  auto const &api = egl::EglProxy::Instance()->Api();
+  if (attribute == EGL_NATIVE_VISUAL_TYPE) {
+    attribute = EGL_NATIVE_VISUAL_ID;
+  }
+  if (auto ret = Display::GetConfigAttrib(config, attribute, value); ret) {
+    if (attribute == EGL_NATIVE_VISUAL_ID) {
+      *value = egl::misc::GetHalFromFromGbmFormat(*value);
+    }
+    return EGL_TRUE;
+  } else if (!ret && api.eglGetError() == EGL_BAD_ATTRIBUTE) {
+    if (auto it = kAndroidSpecialAttributes.find(attribute);
+        it != kAndroidSpecialAttributes.end()) {
+      *value = it->second;
+      return EGL_TRUE;
+    }
+  }
+  ALOGD("eglGetConfigAttrib failed from attribute : 0x%04X", attribute);
+  return EGL_FALSE;
 }
 
 EGLDisplay GbmDisplay::GetPlatformDisplay(void *native_display,
@@ -363,15 +468,6 @@ Surface *GbmDisplay::CreatePlatformWindowSurface(EGLConfig config,
     }
   }
   return nullptr;
-}
-
-EGLBoolean GbmDisplay::eglChooseConfig(const EGLint *attrib_list,
-                                       EGLConfig *configs, EGLint config_size,
-                                       EGLint *num_config) {
-  auto const &api = proxy_->Api();
-  auto dpy = egl_dpy_.get();
-  return api.eglChooseConfig(dpy, attrib_list, configs, config_size,
-                             num_config);
 }
 
 }  // namespace egl

@@ -185,7 +185,9 @@ bool EglProxy::Initialize() {
   }
   auto gbm_dpy =
       std::shared_ptr<gbm_device>(gbm_create_device(fd), [fd](gbm_device *dev) {
-        gbm_device_destroy(dev);
+        if (dev){
+          gbm_device_destroy(dev);
+        }
         close(fd);
       });
   if (!gbm_dpy) {
