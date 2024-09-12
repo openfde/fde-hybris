@@ -169,7 +169,7 @@ const char *Display::GetEglExtensions() {
     std::lock_guard<std::mutex> guard{mtx_};
     if (!inited_extensions_) {
       inited_extensions_ = true;
-      auto strs = proxy_->Api().eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+      auto strs = proxy_->Api().eglQueryString(egl_dpy_.get(), EGL_EXTENSIONS);
       if (!strs) {
         return nullptr;
       }

@@ -227,6 +227,15 @@ int32_t main(int32_t argc, char *argv[]) {
     auto vendor = eglQueryString(egl_display, EGL_VENDOR);
     auto apis = eglQueryString(egl_display, EGL_CLIENT_APIS);
     printf("EGL vendor : %s, version : %s, apis : %s\n", vendor, version, apis);
+
+    if (auto extension = eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+        extension) {
+      printf("Client egl extensions : %s\n", extension);
+    }
+    if (auto extension = eglQueryString(egl_display, EGL_EXTENSIONS);
+        extension) {
+      printf("Display egl extensions : %s\n", extension);
+    }
   }
   ret = eglBindAPI(EGL_OPENGL_ES_API);
   assert(ret);
