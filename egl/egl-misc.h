@@ -65,4 +65,6 @@ int32_t EglAttrbCount(const Type *attrib_list) {
 std::vector<EGLint> ConvertAttribToInt(const EGLAttrib *attrib_list);
 std::vector<EGLAttrib> ConvertIntToAttrib(const EGLint *attrib_list);
 
+std::string StringFourcc(uint32_t fourcc);
+
 }  // namespace egl::misc

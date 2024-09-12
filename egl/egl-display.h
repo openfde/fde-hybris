@@ -94,9 +94,10 @@ class Display {
                         const EGLint *attrib_list);
   EGLBoolean DestroyImageKHR(EGLImageKHR img);
 
-  virtual EGLBoolean eglChooseConfig(const EGLint *attrib_list,
-                                     EGLConfig *configs, EGLint config_size,
-                                     EGLint *num_config) = 0;
+  virtual EGLBoolean ChooseConfig(const EGLint *attrib_list, EGLConfig *configs,
+                                  EGLint config_size, EGLint *num_config);
+  virtual EGLBoolean GetConfigAttrib(EGLConfig config, EGLint attribute,
+                                     EGLint *value);
 
  private:
   bool AddImage(ImagePtr image);
@@ -129,8 +130,10 @@ class AndroidDisplay : public Display {
   Surface *CreatePlatformWindowSurface(EGLConfig config, void *native_window,
                                        const EGLAttrib *attrib_list) override;
 
-  EGLBoolean eglChooseConfig(const EGLint *attrib_list, EGLConfig *configs,
-                             EGLint config_size, EGLint *num_config) override;
+  EGLBoolean ChooseConfig(const EGLint *attrib_list, EGLConfig *configs,
+                          EGLint config_size, EGLint *num_config) override;
+  EGLBoolean GetConfigAttrib(EGLConfig config, EGLint attribute,
+                             EGLint *value) override;
 
  private:
   GbmDevicePtr gbm_;
@@ -145,9 +148,6 @@ class GbmDisplay : public Display {
 
   Surface *CreatePlatformWindowSurface(EGLConfig config, void *native_window,
                                        const EGLAttrib *attrib_list) override;
-
-  EGLBoolean eglChooseConfig(const EGLint *attrib_list, EGLConfig *configs,
-                             EGLint config_size, EGLint *num_config) override;
 };
 
 }  // namespace egl

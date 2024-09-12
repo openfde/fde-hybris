@@ -220,25 +220,16 @@ HYBRIS_VISIBILITY EGLBoolean eglChooseConfig(EGLDisplay dpy,
                                              EGLint config_size,
                                              EGLint *num_config) {
   auto const &api = egl::EglProxy::Instance()->Api();
-  if (!attrib_list || attrib_list[0] == EGL_NONE) {
+  if (dpy == EGL_NO_DISPLAY || !attrib_list || attrib_list[0] == EGL_NONE) {
     return api.eglChooseConfig(dpy, attrib_list, configs, config_size,
                                num_config);
   }
-  auto attribs = egl::misc::DupAttributes(attrib_list);
-
-  for (auto it = attribs.begin(); *it != EGL_NONE; it += 2) {
-    if (*it == EGL_SURFACE_TYPE) {
-      // auto &type = *std::next(it);
-      // type &= ~EGL_WINDOW_BIT;
-      // type |= EGL_PBUFFER_BIT;
-    } else if (*it == EGL_NATIVE_VISUAL_ID) {
-      *std::next(it) = egl::misc::GetGbmFormatFromHalFormat(*std::next(it));
-    } else if (*it == EGL_NATIVE_VISUAL_TYPE) {
-      *std::next(it) = EGL_DONT_CARE;
-    }
+  if (auto display = egl::DisplayManager::Instance()->FindDispay(dpy);
+      display) {
+    return display->ChooseConfig(attrib_list, configs, config_size, num_config);
   }
-  return api.eglChooseConfig(dpy, attribs.data(), configs, config_size,
-                             num_config);
+  // EGL_BAD_DISPLAY
+  return EGL_FALSE;
 }
 
 HYBRIS_VISIBILITY EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLSurface draw,
@@ -297,28 +288,15 @@ HYBRIS_VISIBILITY EGLBoolean eglGetConfigAttrib(EGLDisplay dpy,
                                                 EGLint attribute,
                                                 EGLint *value) {
   auto const &api = egl::EglProxy::Instance()->Api();
-  auto ret = api.eglGetConfigAttrib(dpy, config, attribute, value);
-  if (!ret && api.eglGetError() == EGL_BAD_ATTRIBUTE) {
-    // EGL_ANDROID_framebuffer_target
-    if (attribute == EGL_FRAMEBUFFER_TARGET_ANDROID) {
-      *value = EGL_TRUE;
-      return EGL_TRUE;
-    }
-    if (attribute == EGL_COVERAGE_SAMPLES_NV ||
-        attribute == EGL_COVERAGE_BUFFERS_NV) {
-      *value = 0;
-      return EGL_TRUE;
-    }
-    if (attribute == EGL_DEPTH_ENCODING_NV) {
-      *value = EGL_DEPTH_ENCODING_NONE_NV;
-      return EGL_TRUE;
-    }
-    if (attribute == EGL_COLOR_COMPONENT_TYPE_EXT) {
-      *value = EGL_COLOR_COMPONENT_TYPE_FIXED_EXT;
-      return EGL_TRUE;
-    }
+  if (dpy == EGL_NO_DISPLAY) {
+    return api.eglGetConfigAttrib(dpy, config, attribute, value);
   }
-  return ret;
+  if (auto display = egl::DisplayManager::Instance()->FindDispay(dpy);
+      display) {
+    return display->GetConfigAttrib(config, attribute, value);
+  }
+  // EGL_BAD_DISPLAY
+  return EGL_FALSE;
 }
 
 HYBRIS_VISIBILITY EGLSurface eglGetCurrentSurface(EGLint readdraw) {

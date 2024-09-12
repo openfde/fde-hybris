@@ -47,12 +47,15 @@ EGLBoolean Image::DestroyImage() {
 AndroidBufferImage::AndroidBufferImage(EGLDisplay egl_dpy, EglProxy *proxy,
                                        ANativeWindowBuffer *buffer)
     : Image(egl_dpy, proxy) {
-  auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(buffer);
-  AHardwareBuffer_acquire(hardware_buffer);
-  buffer_.reset(buffer, [](ANativeWindowBuffer *native_buffer) {
-    auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(native_buffer);
-    AHardwareBuffer_release(hardware_buffer);
-  });
+  if (buffer) {
+    auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(buffer);
+    AHardwareBuffer_acquire(hardware_buffer);
+    buffer_.reset(buffer, [](ANativeWindowBuffer *native_buffer) {
+      auto hardware_buffer =
+          ANativeWindowBuffer_getHardwareBuffer(native_buffer);
+      AHardwareBuffer_release(hardware_buffer);
+    });
+  }
 }
 
 EGLImage AndroidBufferImage::CreateImage(EGLContext ctx,

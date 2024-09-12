@@ -46,7 +46,8 @@ int32_t GetHalFromFromGbmFormat(int32_t gbm_format) {
     case GBM_FORMAT_ABGR2101010:
       return HAL_PIXEL_FORMAT_RGBA_1010102;
     default:
-      ALOGW("unsupported gbm buffer format 0x%08X", gbm_format);
+      ALOGW("unsupported gbm buffer format %s",
+            StringFourcc(gbm_format).c_str());
   }
   return EGL_DONT_CARE;
 }
@@ -100,6 +101,13 @@ std::vector<EGLAttrib> ConvertIntToAttrib(const EGLint *attrib_list) {
   std::vector<EGLAttrib> attribs;
   ConvertAttributes(attrib_list, attribs);
   return attribs;
+}
+
+std::string StringFourcc(uint32_t fourcc) {
+  char str[5] = {};
+  sprintf(str, "%c%c%c%c", (fourcc & 0x7f), ((fourcc >> 8) & 0x7f),
+          ((fourcc >> 16) & 0x7f), ((fourcc >> 24) & 0x7f));
+  return str;
 }
 
 }  // namespace egl::misc
