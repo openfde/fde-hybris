@@ -172,7 +172,7 @@ bool EglProxy::Initialize() {
   };
   auto ok_15 = HasExtensions(native_client_extensions, kEgl15Extensions);
   if (!ok_14 && !ok_15) {
-    ALOGD(
+    ALOGE(
         "The version of native EGL must be egl 1.4 with "
         "EGL_MESA_platform_gbm or egl 1.5 with EGL_KHR_platform_gbm");
     return false;
@@ -185,7 +185,7 @@ bool EglProxy::Initialize() {
   }
   auto gbm_dpy =
       std::shared_ptr<gbm_device>(gbm_create_device(fd), [fd](gbm_device *dev) {
-        if (dev){
+        if (dev) {
           gbm_device_destroy(dev);
         }
         close(fd);
@@ -259,8 +259,11 @@ bool EglProxy::Initialize() {
       // "EGL_EXT_image_dma_buf_import_modifiers",
   };
 
-  auto display_extensions = api_.eglQueryString(egl_dpy, EGL_EXTENSIONS);
-  auto ok_display = HasExtensions(display_extensions, kExtensionsForDisplay);
+  bool ok_display = false;
+  if (auto display_extensions = api_.eglQueryString(egl_dpy, EGL_EXTENSIONS);
+      display_extensions) {
+    ok_display = HasExtensions(display_extensions, kExtensionsForDisplay);
+  }
 
   auto client_extensions = misc::SplitBySpace(native_client_extensions);
   client_extensions_ = misc::SerializeExtensions(client_extensions,
@@ -270,7 +273,7 @@ bool EglProxy::Initialize() {
     client_extensions_ += kEglPlatformAndroid;
     client_extensions_ += kExtensionDelimiter;
   }
-  ALOGV("EGL client extension : %s", client_extensions_.c_str());
+  ALOGD("EGL client extensions : %s", client_extensions_.c_str());
 
   ImplementEgl15Api();
 
@@ -293,7 +296,7 @@ EglProxy *EglProxy::Instance() {
   }
   if (!egl) {
     ALOGE("Load and initialize egl proxy failed");
-    abort();
+    // abort();
   }
   return egl.get();
 }

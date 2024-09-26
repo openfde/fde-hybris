@@ -79,7 +79,7 @@ EGLImage AndroidBufferImage::CreateImage(EGLContext ctx,
   if (!FillAttribs(native_buffer, sizeof(attribs) / sizeof(*attribs),
                    attribs)) {
     // display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
-    ALOGD("Cannot Get native buffer info %p", native_buffer);
+    ALOGD("Cannot get native buffer info %p", native_buffer);
     return EGL_NO_IMAGE;
   }
 
@@ -116,9 +116,8 @@ EGLBoolean AndroidBufferImage::FillAttribs(
   u_gralloc_buffer_basic_info buffer_basic_info{};
   u_gralloc_buffer_color_info buffer_color_info{};
   auto gralloc = GetGralloc().get();
-  assert(gralloc);
-  if (u_gralloc_get_buffer_basic_info(gralloc, &buffer_handle,
-                                      &buffer_basic_info)) {
+  if (!gralloc || u_gralloc_get_buffer_basic_info(gralloc, &buffer_handle,
+                                                  &buffer_basic_info)) {
     return EGL_FALSE;
   }
   u_gralloc_get_buffer_color_info(gralloc, &buffer_handle, &buffer_color_info);
