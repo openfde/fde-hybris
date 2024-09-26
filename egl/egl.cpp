@@ -24,8 +24,9 @@
 #include "gbm.h"
 #include "u_gralloc/u_gralloc.h"
 
-#define HYBRIS_LIBNAME "libEGL.so.1"  // soname
-#define HYBRIS_ENVNAME "HYBRIS-EGL"
+#define HYBRIS_GET_SYMBOL_ADDRESS(symbol) \
+  ({ egl::EglProxy::Instance()->Api().symbol; })
+
 #include "binding.h"
 
 extern "C" {
@@ -187,9 +188,10 @@ EGLClientBuffer eglGetNativeClientBufferANDROID(
 }  // namespace
 
 HYBRIS_VISIBILITY EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id) {
-  if (auto display = egl::DisplayManager::Instance()->GetDisplay(display_id);
-      display) {
-    return display->GetEglDisplay();
+  if (auto manager = egl::DisplayManager::Instance(); manager) {
+    if (auto display = manager->GetDisplay(display_id); display) {
+      return display->GetEglDisplay();
+    }
   }
   return EGL_NO_DISPLAY;
 }
@@ -319,23 +321,16 @@ HYBRIS_VISIBILITY EGLint eglGetError(void) {
 HYBRIS_VISIBILITY __eglMustCastToProperFunctionPointerType
 eglGetProcAddress(const char *procname) {
   auto const &api = egl::EglProxy::Instance()->Api();
-  auto addr = api.eglGetProcAddress(procname);
+  if (strncmp(procname, "egl", 3) != 0) {
+    return api.eglGetProcAddress(procname);
+  }
+
   if (strcmp(procname, "eglDupNativeFenceFDANDROID") == 0) {
     // not support EGL_ANDROID_native_fence_sync extension
   } else if (strcmp(procname, "eglSetBlobCacheFuncsANDROID") == 0) {
     // not support EGL_ANDROID_blob_cache extension
   } else if (strcmp(procname, "eglPresentationTimeANDROID") == 0) {
     // not support EGL_ANDROID_presentation_time extension
-  } else if (strcmp(procname, "eglCreateNativeClientBufferANDROID") == 0) {
-    if (!addr) {
-      return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
-          eglCreateNativeClientBufferANDROID);
-    }
-  } else if (strcmp(procname, "eglGetNativeClientBufferANDROID") == 0) {
-    if (!addr) {
-      return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
-          eglGetNativeClientBufferANDROID);
-    }
   } else if (strcmp(procname, "eglCreateImageKHR") == 0) {
     return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
         eglCreateImageKHR);
@@ -343,10 +338,21 @@ eglGetProcAddress(const char *procname) {
     return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
         eglDestroyImageKHR);
   }
-  if (!addr) {
-    ALOGD("Not implement %s", procname);
+  if (auto addr = api.eglGetProcAddress(procname); addr) {
+    ALOGV("eglGetProcAddress %s=%p", procname, addr);
+    return addr;
   }
-  return addr;
+  if (strcmp(procname, "eglCreateNativeClientBufferANDROID") == 0) {
+    return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
+        eglCreateNativeClientBufferANDROID);
+
+  } else if (strcmp(procname, "eglGetNativeClientBufferANDROID") == 0) {
+    return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
+        eglGetNativeClientBufferANDROID);
+  }
+  ALOGD("Not implement %s", procname);
+
+  return nullptr;
 }
 
 HYBRIS_VISIBILITY const char *eglQueryString(EGLDisplay dpy, EGLint name) {
