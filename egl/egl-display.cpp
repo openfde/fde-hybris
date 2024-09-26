@@ -81,7 +81,7 @@ Display *DisplayManager::GetDisplay(EGLNativeDisplayType display_id) {
     return GetPlatformDisplay(EGL_PLATFORM_ANDROID_KHR, EGL_NO_DISPLAY,
                               nullptr);
   }
-
+  ALOGD("eglGetDisplay failed: not support display id %p", display_id);
   return nullptr;
 }
 
@@ -92,24 +92,44 @@ Display *DisplayManager::GetPlatformDisplay(EGLenum platform,
   if (!proxy) {
     return nullptr;
   }
-  Display *display = {};
+  {
+    std::lock_guard<std::mutex> lock{mtx_};
+    if (auto it =
+            FindDisplayPosByParameters(platform, native_display, attrib_list);
+        it != displays_.end()) {
+      ALOGD("eglGetPlatformDisplay(0x%0xX) found display %p", platform,
+            it->get());
+      return it->get();
+    }
+  }
+
+  DisplayPtr display = {};
   if (platform == EGL_PLATFORM_ANDROID_KHR) {
     if (auto gbm = NewGbmDevice(); gbm) {
-      display = new AndroidDisplay{proxy, gbm};
+      display = std::make_shared<AndroidDisplay>(proxy, gbm);
+    } else {
+      ALOGD("eglGetPlatformDisplay failed: create gbm device");
     }
   } else if (platform == EGL_PLATFORM_GBM_KHR) {
-    display = new GbmDisplay{proxy};
+    display = std::make_shared<GbmDisplay>(proxy);
+  } else {
+    ALOGD("eglGetPlatformDisplay Not support platform 0x%04X, display %p",
+          platform, native_display);
   }
   if (display) {
+    display->SetParameters(platform, native_display, attrib_list);
     if (auto egl_dpy = display->GetPlatformDisplay(native_display, attrib_list);
         egl_dpy != EGL_NO_DISPLAY) {
       std::lock_guard<std::mutex> lock{mtx_};
       if (auto it = FindIdleSlot(); it != displays_.end()) {
         *it = display;
-        return display;
+        return display.get();
+      } else {
+        ALOGD("eglGetPlatformDisplay failed: too many displays");
       }
+    } else {
+      ALOGD("eglGetPlatformDisplay failed : %s", proxy->StrLastError().c_str());
     }
-    delete display;
   }
 
   return nullptr;
@@ -126,9 +146,7 @@ Display *DisplayManager::GetPlatformDisplayEXT(EGLenum platform,
 EGLBoolean DisplayManager::Terminate(EGLDisplay egl_dpy) {
   std::lock_guard<std::mutex> guard{mtx_};
   if (auto it = FindDisplayPos(egl_dpy); it != displays_.end()) {
-    auto dpy = *it;
-    *it = nullptr;
-    delete dpy;
+    it->reset();
     return EGL_TRUE;
   }
   return EGL_FALSE;
@@ -136,7 +154,7 @@ EGLBoolean DisplayManager::Terminate(EGLDisplay egl_dpy) {
 
 Display *DisplayManager::FindDispay(EGLDisplay egl_dpy) {
   if (auto it = FindDisplayPos(egl_dpy); it != displays_.end()) {
-    return *it;
+    return it->get();
   }
   return nullptr;
 }
@@ -146,6 +164,16 @@ DisplayManager::DisplayIterator DisplayManager::FindDisplayPos(
   return std::find_if(displays_.begin(), displays_.end(),
                       [egl_dpy](auto &display) {
                         return display && display->GetEglDisplay() == egl_dpy;
+                      });
+}
+
+DisplayManager::DisplayIterator DisplayManager::FindDisplayPosByParameters(
+    EGLenum platform, void *native_display, const EGLAttrib *attrib_list) {
+  return std::find_if(displays_.begin(), displays_.end(),
+                      [platform, native_display, attrib_list](auto &display) {
+                        return display &&
+                               display->SameAs(platform, native_display,
+                                               attrib_list);
                       });
 }
 
@@ -162,6 +190,12 @@ DisplayManager::DisplayIterator DisplayManager::FindIdleSlot() {
   return std::find_if(displays_.begin(), displays_.end(),
                       [](auto &display) { return !display; });
 }
+
+Display::ParameterT::ParameterT(EGLenum platform, void *native_display,
+                                const EGLAttrib *attrib_list)
+    : plt(platform),
+      native_dpy(native_display),
+      attribs(misc::DupAttributes(attrib_list)) {}
 
 const char *Display::GetEglExtensions() {
   constexpr char kNativeBufferExtensions[] = "EGL_ANDROID_image_native_buffer";
@@ -202,6 +236,36 @@ Surface *Display::CreatePlatformWindowSurfaceEXT(EGLConfig config,
   std::vector<EGLAttrib> attribs;
   auto list = misc::ConvertAttributes(attrib_list, attribs);
   return CreatePlatformWindowSurface(config, native_window, list);
+}
+
+void Display::SetParameters(EGLenum platform, void *native_display,
+                            const EGLAttrib *attrib_list) {
+  parameters_ = ParameterT{platform, native_display, attrib_list};
+}
+
+bool Display::SameAs(EGLenum platform, void *native_display,
+                     const EGLAttrib *attrib_list) {
+  if (platform != parameters_.plt || native_display != parameters_.native_dpy) {
+    return false;
+  }
+  if (!attrib_list && (parameters_.attribs.empty() ||
+                       parameters_.attribs.front() == EGL_NONE)) {
+    return true;
+  }
+  if (!attrib_list || parameters_.attribs.empty()) {
+    return false;
+  }
+  size_t pos = {};
+  for (auto end_pos = parameters_.attribs.size() - 1;
+       pos < end_pos && attrib_list[pos] != EGL_NONE; pos++) {
+    if (parameters_.attribs[pos] != attrib_list[pos]) {
+      return false;
+    }
+  }
+  if (attrib_list[pos] != parameters_.attribs[pos]) {
+    return false;
+  }
+  return true;
 }
 
 void Display::SetEglDisplay(EGLDisplay egl_dpy) {

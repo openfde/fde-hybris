@@ -47,18 +47,31 @@ class DisplayManager {
 
  private:
   static constexpr int32_t kMaxDisplays = 128;
-  using DisplayIterator = std::array<Display *, kMaxDisplays>::iterator;
+  using DisplayIterator = std::array<DisplayPtr, kMaxDisplays>::iterator;
 
   DisplayIterator FindDisplayPos(EGLDisplay egl_dpy);
+  DisplayIterator FindDisplayPosByParameters(EGLenum platform,
+                                             void *native_display,
+                                             const EGLAttrib *attrib_list);
 
   GbmDevicePtr NewGbmDevice();
   DisplayIterator FindIdleSlot();
 
-  std::array<Display *, kMaxDisplays> displays_{};
+  std::array<DisplayPtr, kMaxDisplays> displays_{};
   std::mutex mtx_;
 };
 
 class Display {
+ private:
+  struct ParameterT {
+    ParameterT() = default;
+    ParameterT(EGLenum platform, void *native_display,
+               const EGLAttrib *attrib_list);
+    EGLenum plt{};
+    void *native_dpy{};
+    std::vector<EGLAttrib> attribs;
+  };
+
  public:
   Display(EglProxy *proxy) : proxy_(proxy) {}
   virtual ~Display() = default;
@@ -99,6 +112,11 @@ class Display {
   virtual EGLBoolean GetConfigAttrib(EGLConfig config, EGLint attribute,
                                      EGLint *value);
 
+  void SetParameters(EGLenum platform, void *native_display,
+                     const EGLAttrib *attrib_list);
+  bool SameAs(EGLenum platform, void *native_display,
+              const EGLAttrib *attrib_list);
+
  private:
   bool AddImage(ImagePtr image);
   void DeleteImage(EGLImage egl_image);
@@ -117,6 +135,7 @@ class Display {
   bool inited_extensions_ = false;
   ImageManager image_manager_;
   std::map<EGLImage, ImagePtr> images_;
+  ParameterT parameters_;
 };
 
 class AndroidDisplay : public Display {
