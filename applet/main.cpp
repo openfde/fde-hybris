@@ -14,11 +14,10 @@
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <set>
 #include <sstream>
 #include <vector>
-
-#include "egl/egl-proxy.h"
 
 // system/core/libsystem/include/system/graphics-base-v1.0.h
 enum android_pixel_format_t {
@@ -87,8 +86,18 @@ void OutputNativeVisual(EGLDisplay egl_display, const EGLConfig *configs,
 void OutputNativeVisual() {
   auto fd = open("/dev/dri/renderD128", O_RDWR | O_CLOEXEC);
   auto gbm = gbm_create_device(fd);
+  std::shared_ptr<gbm_device> gbm_auto{gbm, [fd](gbm_device *dev) {
+                                         if (dev) {
+                                           gbm_device_destroy(dev);
+                                         }
+                                         close(fd);
+                                       }};
   auto egl_display = eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, gbm, nullptr);
-  assert(egl_display != EGL_NO_DISPLAY);
+  if (egl_display == EGL_NO_DISPLAY) {
+    fprintf(stderr, "eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR) : 0x%04X\n",
+            eglGetError());
+    return;
+  }
   auto ret = eglInitialize(egl_display, nullptr, nullptr);
   assert(ret);
   EGLint num_config = {};
@@ -100,11 +109,54 @@ void OutputNativeVisual() {
   assert(ret);
   OutputNativeVisual(egl_display, configs.data(), num_config);
   eglTerminate(egl_display);
-  gbm_device_destroy(gbm);
-  close(fd);
+}
+
+void *egl_loop(void *data) {
+  auto egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+
+  if (!egl_display) {
+    fprintf(stderr, "eglGetDisplay 0x%04X\n", eglGetError());
+    return nullptr;
+  }
+  {
+    constexpr size_t kTestDisplayNumber = 16;
+    std::vector<EGLDisplay> displays;
+    for (size_t i = 0; i < kTestDisplayNumber; i++) {
+      if (auto display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+          display != EGL_NO_DISPLAY) {
+        displays.push_back(display);
+      }
+    }
+    if (displays.size() != kTestDisplayNumber) {
+      fprintf(stderr, "Open displays test failed\n");
+    }
+    for (auto display : displays) {
+      eglTerminate(display);
+    }
+  }
+
+  if (auto ret = eglInitialize(egl_display, nullptr, nullptr); !ret) {
+    fprintf(stderr, "eglInitialize 0x%04X\n", eglGetError());
+  }
+
+  eglTerminate(egl_display);
+  return nullptr;
 }
 
 int32_t main(int32_t argc, char *argv[]) {
+  pthread_t egl_worker_thread;
+
+  if (auto ret = pthread_create(&egl_worker_thread, NULL, egl_loop, nullptr);
+      ret != 0) {
+    fprintf(stderr, "waydroid_hw_composer could not start egl_worker_thread");
+  }
+
+  pthread_join(egl_worker_thread, nullptr);
+
+  if (auto addr = eglGetProcAddress("eglCreateImageKHR"); !addr) {
+    fprintf(stderr, "0x%04X", eglGetError());
+  }
+
   OutputNativeVisual();
   if (auto val = getenv("EGL_DISPLAY")) {
     fprintf(stderr, "EGL_DISPLAY=%s\n", val);
@@ -113,11 +165,6 @@ int32_t main(int32_t argc, char *argv[]) {
   if (auto val = getenv("EGL_PLATFORM")) {
     fprintf(stderr, "EGL_PLATFORM=%s\n", val);
   }
-
-  // auto lib_handle = egl::EglProxy::LoadLibrary();
-  // auto proxy = std::make_shared<egl::EglProxy>(lib_handle);
-  // proxy->Initialize();
-  egl::EglProxy::Instance();
 
   auto egl_display = eglGetDisplay(EGL_DEFAULT_DISPLAY);
 
