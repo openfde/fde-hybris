@@ -143,7 +143,8 @@ EGLBoolean AndroidBufferImage::FillAttribs(
   auto fds = buffer_basic_info.fds;
   auto offsets = buffer_basic_info.offsets;
   auto strides = buffer_basic_info.strides;
-  auto modifier = buffer_basic_info.modifier;
+  // some vendor egl library not support EGL_EXT_image_dma_buf_import_modifiers
+  // auto modifier = buffer_basic_info.modifier;
   if (n_planes > 0) {
     attribs[atti++] = EGL_DMA_BUF_PLANE0_FD_EXT;
     attribs[atti++] = fds[0];
@@ -152,10 +153,10 @@ EGLBoolean AndroidBufferImage::FillAttribs(
     attribs[atti++] = EGL_DMA_BUF_PLANE0_PITCH_EXT;
     attribs[atti++] = strides[0];
 
-    attribs[atti++] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
-    attribs[atti++] = modifier & 0xFFFFFFFF;
-    attribs[atti++] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
-    attribs[atti++] = modifier >> 32;
+    // attribs[atti++] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
+    // attribs[atti++] = modifier & 0xFFFFFFFF;
+    // attribs[atti++] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
+    // attribs[atti++] = modifier >> 32;
   }
 
   if (n_planes > 1) {
@@ -166,10 +167,10 @@ EGLBoolean AndroidBufferImage::FillAttribs(
     attribs[atti++] = EGL_DMA_BUF_PLANE1_PITCH_EXT;
     attribs[atti++] = strides[1];
 
-    attribs[atti++] = EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT;
-    attribs[atti++] = modifier & 0xFFFFFFFF;
-    attribs[atti++] = EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT;
-    attribs[atti++] = modifier >> 32;
+    // attribs[atti++] = EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT;
+    // attribs[atti++] = modifier & 0xFFFFFFFF;
+    // attribs[atti++] = EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT;
+    // attribs[atti++] = modifier >> 32;
   }
 
   if (n_planes > 2) {
@@ -180,10 +181,10 @@ EGLBoolean AndroidBufferImage::FillAttribs(
     attribs[atti++] = EGL_DMA_BUF_PLANE2_PITCH_EXT;
     attribs[atti++] = strides[2];
 
-    attribs[atti++] = EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT;
-    attribs[atti++] = modifier & 0xFFFFFFFF;
-    attribs[atti++] = EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT;
-    attribs[atti++] = modifier >> 32;
+    // attribs[atti++] = EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT;
+    // attribs[atti++] = modifier & 0xFFFFFFFF;
+    // attribs[atti++] = EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT;
+    // attribs[atti++] = modifier >> 32;
   }
 
   attribs[atti++] = EGL_NONE;
