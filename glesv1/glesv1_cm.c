@@ -186,6 +186,8 @@ HYBRIS_IMPLEMENT_FUNCTION3(void, glTranslatex, GLfixed, GLfixed, GLfixed);
 HYBRIS_IMPLEMENT_FUNCTION4(void, glVertexPointer, GLint, GLenum, GLsizei,
                            const GLvoid *);
 HYBRIS_IMPLEMENT_FUNCTION4(void, glViewport, GLint, GLint, GLsizei, GLsizei);
+
+#ifdef HAVE_GLESV1_EXTENSION
 HYBRIS_IMPLEMENT_FUNCTION3(void, glPointSizePointerOES, GLenum, GLsizei,
                            const GLvoid *);
 HYBRIS_IMPLEMENT_FUNCTION2(void, glBlendEquationSeparateOES, GLenum, GLenum);
@@ -371,3 +373,4 @@ HYBRIS_IMPLEMENT_FUNCTION1(void, glEndTilingQCOM, GLbitfield);
 
 HYBRIS_IMPLEMENT_FUNCTION2(void, glEGLImageTargetTexture2DOES, GLenum,
                            GLeglImageOES);
+#endif
