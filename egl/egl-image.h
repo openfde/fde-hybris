@@ -36,6 +36,7 @@ class ImageManager {
   bool AddImage(ImagePtr image);
   void DeleteImage(EGLImage egl_image);
   Image *FindImage(EGLImage egl_image);
+  void ClearImages();
 
  private:
   std::map<EGLImage, ImagePtr> images_;
@@ -53,7 +54,7 @@ class Image {
 
   EGLImage GetEglImage() { return egl_image_; }
 
-  virtual ~Image() = default;
+  virtual ~Image();
 
  protected:
   EGLDisplay egl_dpy_{};

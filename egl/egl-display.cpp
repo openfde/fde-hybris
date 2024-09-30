@@ -207,6 +207,7 @@ Display::ParameterT::ParameterT(EGLenum platform, void *native_display,
 
 Display::~Display() {
   surfaces_.clear();
+  image_manager_.ClearImages();
   egl_dpy_.reset();
 }
 

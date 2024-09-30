@@ -36,10 +36,23 @@ Image *ImageManager::FindImage(EGLImage egl_image) {
   return nullptr;
 }
 
+void ImageManager::ClearImages() {
+  std::lock_guard<std::mutex> guard{mtx_};
+  images_.clear();
+}
+
+Image::~Image() {
+  if (egl_image_ != EGL_NO_IMAGE) {
+    proxy_->Api().eglDestroyImage(egl_dpy_, egl_image_);
+  }
+}
+
 EGLBoolean Image::DestroyImage() {
   auto const &api = proxy_->Api();
   if (egl_image_ != EGL_NO_IMAGE) {
-    return api.eglDestroyImage(egl_dpy_, egl_image_);
+    auto ret = api.eglDestroyImage(egl_dpy_, egl_image_);
+    egl_image_ = EGL_NO_IMAGE;
+    return ret;
   }
   return EGL_FALSE;
 }

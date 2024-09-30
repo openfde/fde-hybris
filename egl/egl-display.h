@@ -117,11 +117,6 @@ class Display {
   bool SameAs(EGLenum platform, void *native_display,
               const EGLAttrib *attrib_list);
 
- private:
-  bool AddImage(ImagePtr image);
-  void DeleteImage(EGLImage egl_image);
-  Image *FindImage(EGLImage egl_image);
-
  protected:
   void SetEglDisplay(EGLDisplay egl_dpy);
   bool AddSurface(SurfacePtr surface);
