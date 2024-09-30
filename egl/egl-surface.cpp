@@ -31,10 +31,12 @@ EGLBoolean Surface::SwapBuffers() {
 void Surface::SetEglSurface(EGLSurface egl_surf) {
   if (egl_surf != EGL_NO_SURFACE) {
     egl_surf_ = std::shared_ptr<void>(egl_surf, [this](EGLSurface surf) {
-      eglDestroySurface(egl_dpy_, surf);
+      proxy_->Api().eglDestroySurface(egl_dpy_, surf);
     });
   }
 }
+
+WindowSurface::~WindowSurface() { DestroySurface(); }
 
 EGLSurface WindowSurface::CreateSurface(EGLConfig config,
                                         const EGLAttrib *attrib_list) {
@@ -72,6 +74,7 @@ EGLSurface WindowSurface::CreateSurface(EGLConfig config,
 }
 
 EGLBoolean WindowSurface::DestroySurface() {
+  CancelBuffer();
   egl_surf_.reset();
   gbm_surf_.reset();
   return EGL_TRUE;
@@ -110,8 +113,8 @@ EGLBoolean WindowSurface::SwapBuffers() {
   //     bo, [gbm_surf](gbm_bo *b) { gbm_surface_release_buffer(gbm_surf, b);
   //     });
 
-  auto image = std::make_shared<AndroidBufferImage>(egl_dpy_, proxy_,
-                                                    native_buffer_.get());
+  auto image =
+      std::make_shared<AndroidBufferImage>(egl_dpy_, proxy_, native_buffer_);
   auto egl_image = image->CreateImage(EGL_NO_CONTEXT, nullptr);
   if (egl_image == EGL_NO_IMAGE) {
     ALOGD("eglSwapBuffers display %p surface %p failed : %s", egl_dpy_, this,
@@ -174,34 +177,26 @@ EGLBoolean WindowSurface::SwapBuffers() {
   return EGL_TRUE;
 }
 
-void WindowSurface::ResetNativeBuffer(ANativeWindowBuffer *buffer) {
-  auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(buffer);
-  AHardwareBuffer_acquire(hardware_buffer);
-  native_buffer_.reset(buffer, [](ANativeWindowBuffer *native_buffer) {
-    auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(native_buffer);
-    AHardwareBuffer_release(hardware_buffer);
-  });
-}
-
 void WindowSurface::DequeueBuffer() {
   assert(!native_buffer_);
   int32_t fence_fd = -1;
-  ANativeWindowBuffer *native_buffer{};
-  ANativeWindow_dequeueBuffer(native_window_, &native_buffer, &fence_fd);
-  ResetNativeBuffer(native_buffer);
+  ANativeWindow_dequeueBuffer(native_window_, &native_buffer_, &fence_fd);
+  if (fence_fd != -1) {
+    ALOGE("Not support fence sync for ANativeWindow dequeueBuffer");
+  }
 }
 
 void WindowSurface::QueueBuffer() {
   if (native_buffer_) {
-    ANativeWindow_queueBuffer(native_window_, native_buffer_.get(), -1);
-    native_buffer_.reset();
+    ANativeWindow_queueBuffer(native_window_, native_buffer_, -1);
+    native_buffer_ = nullptr;
   }
 }
 
 void WindowSurface::CancelBuffer() {
   if (native_window_ && native_buffer_) {
-    ANativeWindow_cancelBuffer(native_window_, native_buffer_.get(), -1);
-    native_buffer_.reset();
+    ANativeWindow_cancelBuffer(native_window_, native_buffer_, -1);
+    native_buffer_ = nullptr;
   }
 }
 

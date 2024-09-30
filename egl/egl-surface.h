@@ -48,6 +48,8 @@ class WindowSurface : public Surface {
                 gbm_device *gbm)
       : Surface(egl_dpy, proxy), native_window_(window), gbm_(gbm) {}
 
+  ~WindowSurface();
+
   EGLSurface CreateSurface(EGLConfig config,
                            const EGLAttrib *attrib_list) override;
   EGLBoolean DestroySurface() override;
@@ -66,14 +68,13 @@ class WindowSurface : public Surface {
   };
   using CreateStatePtr = std::shared_ptr<CreatedStateT>;
 
-  void ResetNativeBuffer(ANativeWindowBuffer *native_buffer);
   void DequeueBuffer();
   void QueueBuffer();
   void CancelBuffer();
 
  private:
   ANativeWindow *native_window_{};
-  std::shared_ptr<ANativeWindowBuffer> native_buffer_{};
+  ANativeWindowBuffer *native_buffer_{};
   gbm_device *gbm_{};
   GbmSurfacePtr gbm_surf_;
   CreateStatePtr created_state_{};

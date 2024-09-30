@@ -205,6 +205,11 @@ Display::ParameterT::ParameterT(EGLenum platform, void *native_display,
       native_dpy(native_display),
       attribs(misc::DupAttributes(attrib_list)) {}
 
+Display::~Display() {
+  surfaces_.clear();
+  egl_dpy_.reset();
+}
+
 const char *Display::GetEglExtensions() {
   constexpr char kNativeBufferExtensions[] = "EGL_ANDROID_image_native_buffer";
   if (!inited_extensions_) {
@@ -218,7 +223,7 @@ const char *Display::GetEglExtensions() {
       auto platform_extensions = misc::SplitBySpace(strs);
       // EGL_ANDROID_framebuffer_target ???
       if (std::find(platform_extensions.cbegin(), platform_extensions.cend(),
-                    "EGL_EXT_image_dma_buf_import") ==
+                    "EGL_EXT_image_dma_buf_import") !=
           platform_extensions.cend()) {
         // not support EGL_ANDROID_create_native_client_buffer and
         // EGL_ANDROID_get_native_client_buffer
@@ -309,16 +314,21 @@ void Display::DeleteSurface(SurfacePtr surface) {
   }
 }
 
-Surface *Display::FindSurface(EGLSurface egl_surf) {
+const SurfacePtr &Display::FindSurfaceByEgl(EGLSurface egl_surf) {
+  static SurfacePtr kNotFoundSurface;
   std::lock_guard<std::mutex> guard{mtx_};
   if (auto it = std::find_if(surfaces_.begin(), surfaces_.end(),
                              [egl_surf](const SurfacePtr &surface) {
-                               return surface->GetEglSurface() == egl_surf;
+                               return surface.get() == egl_surf;
                              });
       it != surfaces_.end()) {
-    return it->get();
+    return *it;
   }
-  return nullptr;
+  return kNotFoundSurface;
+}
+
+Surface *Display::FindSurface(EGLSurface egl_surf) {
+  return FindSurfaceByEgl(egl_surf).get();
 }
 
 Image *Display::CreateImage(EGLContext ctx, EGLenum target,
@@ -381,8 +391,11 @@ EGLBoolean Display::DestroyImageKHR(EGLImageKHR img) {
 }
 
 EGLBoolean Display::DestroySurface(EGLSurface egl_surf) {
-  if (auto surface = FindSurface(egl_surf); surface) {
-    return surface->DestroySurface();
+  if (auto const &surface = FindSurfaceByEgl(egl_surf); surface) {
+    if (surface->DestroySurface()) {
+      DeleteSurface(surface);
+      return EGL_TRUE;
+    }
   }
   return EGL_FALSE;
 }

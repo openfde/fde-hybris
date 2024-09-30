@@ -74,7 +74,7 @@ class Display {
 
  public:
   Display(EglProxy *proxy) : proxy_(proxy) {}
-  virtual ~Display() = default;
+  virtual ~Display();
 
   EGLDisplay GetEglDisplay() { return egl_dpy_.get(); }
 
@@ -126,6 +126,7 @@ class Display {
   void SetEglDisplay(EGLDisplay egl_dpy);
   bool AddSurface(SurfacePtr surface);
   void DeleteSurface(SurfacePtr surface);
+  const SurfacePtr &FindSurfaceByEgl(EGLSurface egl_surf);
 
   std::shared_ptr<void> egl_dpy_;
   EglProxy *proxy_{};
@@ -134,7 +135,6 @@ class Display {
   std::mutex mtx_;
   bool inited_extensions_ = false;
   ImageManager image_manager_;
-  std::map<EGLImage, ImagePtr> images_;
   ParameterT parameters_;
 };
 
