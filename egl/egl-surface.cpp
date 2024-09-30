@@ -43,7 +43,8 @@ EGLSurface WindowSurface::CreateSurface(EGLConfig config,
 
   auto width = ANativeWindow_getWidth(native_window_);
   auto height = ANativeWindow_getHeight(native_window_);
-  auto format = ANativeWindow_getFormat(native_window_);
+  auto format =
+      misc::GetGbmFormatFromHalFormat(ANativeWindow_getFormat(native_window_));
   uint32_t flags = GBM_BO_USE_SCANOUT | GBM_BO_USE_RENDERING;
   if (auto gbm_surf = gbm_surface_create(gbm_, width, height, format, flags);
       gbm_surf) {
@@ -65,6 +66,8 @@ EGLSurface WindowSurface::CreateSurface(EGLConfig config,
       return egl_surf;
     }
   }
+  ALOGD("eglCreateWindowSurface display %p failed : %s", egl_dpy_,
+        proxy_->StrLastError().c_str());
   return EGL_NO_SURFACE;
 }
 
@@ -97,15 +100,24 @@ EGLBoolean WindowSurface::SwapBuffers() {
     return EGL_FALSE;
   }
 
-  auto gbm_surf = gbm_surf_.get();
-  auto bo = gbm_surface_lock_front_buffer(gbm_surf);
-  if (!bo) {
-    return EGL_FALSE;
-  }
+  // auto gbm_surf = gbm_surf_.get();
+  // auto bo = gbm_surface_lock_front_buffer(gbm_surf);
+  // if (!bo) {
+  //   return EGL_FALSE;
+  // }
+
+  // std::shared_ptr<gbm_bo> auto_bo(
+  //     bo, [gbm_surf](gbm_bo *b) { gbm_surface_release_buffer(gbm_surf, b);
+  //     });
 
   auto image = std::make_shared<AndroidBufferImage>(egl_dpy_, proxy_,
                                                     native_buffer_.get());
   auto egl_image = image->CreateImage(EGL_NO_CONTEXT, nullptr);
+  if (egl_image == EGL_NO_IMAGE) {
+    ALOGD("eglSwapBuffers display %p surface %p failed : %s", egl_dpy_, this,
+          proxy_->StrLastError().c_str());
+    return false;
+  }
 
   GLuint tmp_tex = {};
   GLint curr_tex_bind = {};
@@ -173,21 +185,22 @@ void WindowSurface::ResetNativeBuffer(ANativeWindowBuffer *buffer) {
 
 void WindowSurface::DequeueBuffer() {
   assert(!native_buffer_);
+  int32_t fence_fd = -1;
   ANativeWindowBuffer *native_buffer{};
-  ANativeWindow_dequeueBuffer(native_window_, &native_buffer, nullptr);
+  ANativeWindow_dequeueBuffer(native_window_, &native_buffer, &fence_fd);
   ResetNativeBuffer(native_buffer);
 }
 
 void WindowSurface::QueueBuffer() {
   if (native_buffer_) {
-    ANativeWindow_queueBuffer(native_window_, native_buffer_.get(), 0);
+    ANativeWindow_queueBuffer(native_window_, native_buffer_.get(), -1);
     native_buffer_.reset();
   }
 }
 
 void WindowSurface::CancelBuffer() {
   if (native_window_ && native_buffer_) {
-    ANativeWindow_cancelBuffer(native_window_, native_buffer_.get(), 0);
+    ANativeWindow_cancelBuffer(native_window_, native_buffer_.get(), -1);
     native_buffer_.reset();
   }
 }
