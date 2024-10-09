@@ -1,0 +1,31 @@
+
+filegroup {
+    name: "samples_files",
+
+    srcs: [
+        "test-surface.cpp",
+        "misc/triangle.cpp"
+    ],
+}
+
+
+cc_binary {
+    name: "run-samples",
+    srcs: [":samples_files"],
+    shared_libs : [
+        "libcutils",
+        "libutils",
+        "libui",
+        "libgui",
+        "libEGL",
+        "libGLESv3",
+    ],
+
+    local_include_dirs : [
+        "misc",
+    ],
+    cflags : [
+        "-g3",
+        "-O3",
+    ],
+}
