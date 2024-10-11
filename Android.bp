@@ -108,7 +108,7 @@ cc_defaults {
         "libcutils",
         "libnativewindow",
         "libhardware",
-        "libGLESv2",
+        "libGLESv3",
     ],
 
     static_libs: [
