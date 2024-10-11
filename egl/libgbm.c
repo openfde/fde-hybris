@@ -44,3 +44,6 @@ HYBRIS_IMPLEMENT_FUNCTION1(void *, gbm_bo_get_user_data, struct gbm_bo *);
 typedef void (*set_user_cb)(struct gbm_bo *, void *);
 HYBRIS_IMPLEMENT_FUNCTION3(void, gbm_bo_set_user_data, struct gbm_bo *, void *,
                            set_user_cb);
+
+HYBRIS_IMPLEMENT_FUNCTION2(uint32_t, gbm_bo_get_stride_for_plane,
+                           struct gbm_bo *, int);
