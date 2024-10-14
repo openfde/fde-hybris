@@ -153,6 +153,9 @@ EGLBoolean CopyFramebuffer(EGLImage src_image, EGLImage dest_image,
   FrameBufferBinder read_fb(GL_READ_FRAMEBUFFER, src_image);
   FrameBufferBinder draw_fb(GL_DRAW_FRAMEBUFFER, dest_image);
 
+  // Clear GL errors so that they don't interfere with subsequent operations
+  glGetError();
+
   glBlitFramebuffer(x_offset, y_offset, width, height, x_offset, y_offset,
                     width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
