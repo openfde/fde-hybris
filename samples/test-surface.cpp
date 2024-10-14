@@ -74,7 +74,7 @@ int32_t main(int32_t argc, char *argv[]) {
   int32_t height = 480;
 
   // HAL_PIXEL_FORMAT_RGB_565  or HAL_PIXEL_FORMAT_RGBA_8888
-  int32_t native_format = HAL_PIXEL_FORMAT_RGB_565;
+  int32_t native_format = HAL_PIXEL_FORMAT_RGBA_8888;
 
   sp<SurfaceComposerClient> client = new SurfaceComposerClient();
 
@@ -194,52 +194,41 @@ int32_t main(int32_t argc, char *argv[]) {
     return -1;
   }
 
-#define TEST_SHADER 1
-#ifndef TEST_SHADER
-  std::vector<Color> colors{
-      {0.0, 0.0, 0.0, 1.0}, {1.0, 0.0, 0.0, 1.0}, {0.0, 1.0, 0.0, 1.0},
-      {0.0, 0.0, 1.0, 1.0}, {1.0, 1.0, 1.0, 1.0}, {0.5, 0.0, 0.0, 0.5},
-      {0.0, 0.5, 0.0, 0.5}, {0.0, 0.0, 0.5, 0.5}, {0.5, 0.5, 0.5, 0.5},
-  };
-  for (auto const &color : colors) {
-    glViewport(0, 0, width, height);
-    glClearColor(color.red, color.green, color.blue, color.alpha);
-    glClear(GL_COLOR_BUFFER_BIT);
-    glFlush();
+  auto drawer = std::make_shared<Triangle>(width, height);
+
+  int32_t repeat = 1000;
+  while (repeat-- > 0) {
+    drawer->BuildCompileLinkShaders();
+    drawer->SetupResources();
+
+    drawer->RenderData();
 
     if (!eglSwapBuffers(egl_dpy, egl_surface)) {
       fprintf(stderr, "eglSwapBuffers  : %s\n", StrLastError().c_str());
       return -1;
     }
-    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    drawer->TerminalProgram();
+    std::this_thread::sleep_for(std::chrono::microseconds(100));
+
+    std::vector<Color> colors{
+        {0.0, 0.0, 0.0, 1.0}, {1.0, 0.0, 0.0, 1.0}, {0.0, 1.0, 0.0, 1.0},
+        {0.0, 0.0, 1.0, 1.0}, {1.0, 1.0, 1.0, 1.0}, {0.5, 0.0, 0.0, 0.5},
+        {0.0, 0.5, 0.0, 0.5}, {0.0, 0.0, 0.5, 0.5}, {0.5, 0.5, 0.5, 0.5},
+    };
+    for (auto const &color : colors) {
+      glViewport(0, 0, width, height);
+      glClearColor(color.red, color.green, color.blue, color.alpha);
+      glClear(GL_COLOR_BUFFER_BIT);
+      glFlush();
+
+      if (!eglSwapBuffers(egl_dpy, egl_surface)) {
+        fprintf(stderr, "eglSwapBuffers  : %s\n", StrLastError().c_str());
+        return -1;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
   }
-
-#else
-  auto drawer = std::make_shared<Triangle>(width, height);
-
-  drawer->BuildCompileLinkShaders();
-  drawer->SetupResources();
-
-  drawer->RenderData();
-
-  if (!eglSwapBuffers(egl_dpy, egl_surface)) {
-    fprintf(stderr, "eglSwapBuffers  : %s\n", StrLastError().c_str());
-    return -1;
-  }
-
-  drawer->TerminalProgram();
-#endif
-
-#if 0
-  ANativeWindow_Buffer out_buffer;
-  surface->lock(&out_buffer, nullptr);
-
-  size_t bpr = out_buffer.stride * bytesPerPixel(out_buffer.format);
-  constexpr uint16_t kPixelValue = 0x07E0;
-  std::fill_n(reinterpret_cast<uint16_t *>(out_buffer.bits),
-              bpr * out_buffer.height, kPixelValue);
-  surface->unlockAndPost();
-#endif
 
   eglMakeCurrent(egl_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, egl_cntxt);
   eglDestroySurface(egl_dpy, egl_surface);
