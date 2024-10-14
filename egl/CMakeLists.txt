@@ -30,6 +30,8 @@ set(ANDROID_INCLUDES
   ../../../frameworks/native/libs/nativebase/include
   ../../../system/core/include
   ../../../system/core/libsystem/include
+  ../../../system/core/libsync/include
+  ../../../system/core/libsync/
 )
 
 target_include_directories(${LIBBASENAME} AFTER PRIVATE ${ANDROID_INCLUDES})
