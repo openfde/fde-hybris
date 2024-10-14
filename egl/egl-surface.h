@@ -78,6 +78,8 @@ class WindowSurface : public Surface {
   gbm_device *gbm_{};
   GbmSurfacePtr gbm_surf_;
   CreateStatePtr created_state_{};
+
+  int32_t in_fence_fd_ = -1;
 };
 
 class PassthroughSurface : public Surface {

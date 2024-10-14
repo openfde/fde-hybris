@@ -2,8 +2,10 @@
 
 #include <GLES/gl.h>
 #include <GLES2/gl2.h>
+#include <android/sync.h>
 #include <log/log.h>
 #include <system/window.h>
+#include <unistd.h>
 #include <vndk/window.h>
 
 #define GL_GLEXT_PROTOTYPES
@@ -186,6 +188,19 @@ EGLBoolean CopyFramebuffer(EGLDisplay egl_dpy, egl::Image *src_image,
                          width, height);
 }
 
+void CloseFenceFd(int32_t &fd) {
+  if (fd >= 0) {
+    close(fd);
+    fd = -1;
+  }
+}
+
+void SyncWait(int32_t fd) {
+  if (fd >= 0) {
+    sync_wait(fd, -1);
+  }
+}
+
 }  // namespace
 
 namespace egl {
@@ -207,7 +222,10 @@ void Surface::SetEglSurface(EGLSurface egl_surf) {
   }
 }
 
-WindowSurface::~WindowSurface() { DestroySurface(); }
+WindowSurface::~WindowSurface() {
+  DestroySurface();
+  CloseFenceFd(in_fence_fd_);
+}
 
 EGLSurface WindowSurface::CreateSurface(EGLConfig config,
                                         const EGLAttrib *attrib_list) {
@@ -290,6 +308,8 @@ EGLBoolean WindowSurface::SwapBuffers() {
   auto created_width = created_state_->width;
   auto created_height = created_state_->height;
 
+  SyncWait(in_fence_fd_);
+
   if (!CopyFramebuffer(egl_dpy_, src_image.get(), dest_image.get(), 0, 0,
                        created_width, created_height)) {
     ALOGD("SwapBuffers failed");
@@ -325,11 +345,8 @@ EGLBoolean WindowSurface::SwapBuffers() {
 
 void WindowSurface::DequeueBuffer() {
   assert(!native_buffer_);
-  int32_t fence_fd = -1;
-  ANativeWindow_dequeueBuffer(native_window_, &native_buffer_, &fence_fd);
-  if (fence_fd != -1) {
-    ALOGE("Not support fence sync for ANativeWindow dequeueBuffer");
-  }
+  CloseFenceFd(in_fence_fd_);
+  ANativeWindow_dequeueBuffer(native_window_, &native_buffer_, &in_fence_fd_);
 }
 
 void WindowSurface::QueueBuffer() {
