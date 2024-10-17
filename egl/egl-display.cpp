@@ -19,7 +19,7 @@
 #include "gbm.h"
 
 namespace {
-constexpr char kGbmDevicePath[] = "/dev/dri/renderD128";
+constexpr char kGbmDevicePath[] = "/dev/dri/card0";
 
 std::map<EGLint, EGLint> kAndroidSpecialAttributes{
     // EGL_ANDROID_framebuffer_target
@@ -86,7 +86,7 @@ DisplayManagerPtr &DisplayManager::Instance() {
 
 Display *DisplayManager::GetDisplay(EGLNativeDisplayType display_id) {
   if (display_id == EGL_DEFAULT_DISPLAY) {
-    return GetPlatformDisplay(EGL_PLATFORM_ANDROID_KHR, EGL_NO_DISPLAY,
+    return GetPlatformDisplay(EGL_PLATFORM_ANDROID_KHR, EGL_DEFAULT_DISPLAY,
                               nullptr);
   }
   ALOGD("eglGetDisplay failed: not support display id %p", display_id);
@@ -113,11 +113,7 @@ Display *DisplayManager::GetPlatformDisplay(EGLenum platform,
 
   DisplayPtr display = {};
   if (platform == EGL_PLATFORM_ANDROID_KHR) {
-    if (auto gbm = NewGbmDevice(); gbm) {
-      display = std::make_shared<AndroidDisplay>(proxy, gbm);
-    } else {
-      ALOGD("eglGetPlatformDisplay failed: create gbm device");
-    }
+    display = std::make_shared<AndroidDisplay>(proxy);
   } else if (platform == EGL_PLATFORM_GBM_KHR) {
     display = std::make_shared<GbmDisplay>(proxy);
   } else {
@@ -183,15 +179,6 @@ DisplayManager::DisplayIterator DisplayManager::FindDisplayPosByParameters(
                                display->SameAs(platform, native_display,
                                                attrib_list);
                       });
-}
-
-GbmDevicePtr DisplayManager::NewGbmDevice() {
-  if (auto fd = open(kGbmDevicePath, O_RDWR | O_CLOEXEC); fd >= 0) {
-    if (auto gbm = gbm_create_device(fd); gbm) {
-      return GbmDevicePtr{gbm, [](auto dev) { gbm_device_destroy(dev); }};
-    }
-  }
-  return nullptr;
 }
 
 DisplayManager::DisplayIterator DisplayManager::FindIdleSlot() {
@@ -437,12 +424,13 @@ EGLBoolean Display::GetConfigAttrib(EGLConfig config, EGLint attribute,
 EGLDisplay AndroidDisplay::GetPlatformDisplay(void *native_display,
                                               const EGLAttrib *attrib_list) {
   assert(proxy_);
-  assert(gbm_);
-  if (native_display || (attrib_list && attrib_list[0] != EGL_NONE)) {
+  assert(!gbm_);
+  if (native_display != EGL_DEFAULT_DISPLAY ||
+      (attrib_list && attrib_list[0] != EGL_NONE)) {
     return EGL_NO_DISPLAY;
   }
-  auto egl_dpy = proxy_->Api().eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR,
-                                                     gbm_.get(), nullptr);
+  auto egl_dpy = proxy_->Api().eglGetPlatformDisplay(
+      EGL_PLATFORM_GBM_KHR, EGL_DEFAULT_DISPLAY, nullptr);
   SetEglDisplay(egl_dpy);
   return egl_dpy;
 }
@@ -450,11 +438,13 @@ EGLDisplay AndroidDisplay::GetPlatformDisplay(void *native_display,
 Surface *AndroidDisplay::CreatePlatformWindowSurface(
     EGLConfig config, void *native_window, const EGLAttrib *attrib_list) {
   if (auto window = reinterpret_cast<ANativeWindow *>(native_window); window) {
-    auto surface = std::make_shared<WindowSurface>(GetEglDisplay(), proxy_,
-                                                   window, gbm_.get());
-    if (auto egl_surf = surface->CreateSurface(config, attrib_list);
-        egl_surf != EGL_NO_SURFACE && AddSurface(surface)) {
-      return surface.get();
+    if (auto gbm = GetGbmDevice(); gbm) {
+      auto surface =
+          std::make_shared<WindowSurface>(GetEglDisplay(), proxy_, window, gbm);
+      if (auto egl_surf = surface->CreateSurface(config, attrib_list);
+          egl_surf != EGL_NO_SURFACE && AddSurface(surface)) {
+        return surface.get();
+      }
     }
   }
   return nullptr;
@@ -534,6 +524,19 @@ EGLBoolean AndroidDisplay::GetConfigAttrib(EGLConfig config, EGLint attribute,
   }
   ALOGD("eglGetConfigAttrib failed from attribute : 0x%04X", attribute);
   return EGL_FALSE;
+}
+
+gbm_device *AndroidDisplay::GetGbmDevice() {
+  if (!inited_gbm_) {
+    std::lock_guard<std::mutex> guard{mtx_};
+    if (auto fd = open(kGbmDevicePath, O_RDWR | O_CLOEXEC); fd >= 0) {
+      if (auto gbm = gbm_create_device(fd); gbm) {
+        gbm_ = GbmDevicePtr{gbm, [](auto dev) { gbm_device_destroy(dev); }};
+      }
+    }
+    inited_gbm_ = true;
+  }
+  return gbm_.get();
 }
 
 EGLDisplay GbmDisplay::GetPlatformDisplay(void *native_display,

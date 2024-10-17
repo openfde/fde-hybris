@@ -54,7 +54,6 @@ class DisplayManager {
                                              void *native_display,
                                              const EGLAttrib *attrib_list);
 
-  GbmDevicePtr NewGbmDevice();
   DisplayIterator FindIdleSlot();
 
   std::array<DisplayPtr, kMaxDisplays> displays_{};
@@ -135,8 +134,7 @@ class Display {
 
 class AndroidDisplay : public Display {
  public:
-  AndroidDisplay(EglProxy *proxy, GbmDevicePtr gbm)
-      : Display(proxy), gbm_(std::move(gbm)) {}
+  AndroidDisplay(EglProxy *proxy) : Display(proxy) {}
 
   EGLDisplay GetPlatformDisplay(void *native_display,
                                 const EGLAttrib *attrib_list) override;
@@ -149,8 +147,12 @@ class AndroidDisplay : public Display {
   EGLBoolean GetConfigAttrib(EGLConfig config, EGLint attribute,
                              EGLint *value) override;
 
+  gbm_device *GetGbmDevice();
+
  private:
   GbmDevicePtr gbm_;
+  bool inited_gbm_ = false;
+  std::mutex mtx_;
 };
 
 class GbmDisplay : public Display {
