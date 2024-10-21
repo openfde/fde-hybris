@@ -246,10 +246,11 @@ HYBRIS_VISIBILITY EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLSurface draw,
 
 HYBRIS_VISIBILITY EGLSurface eglCreatePbufferSurface(
     EGLDisplay dpy, EGLConfig config, const EGLint *attrib_list) {
-  (void)dpy;
-  (void)config;
-  (void)attrib_list;
-  ALOGD("eglCreatePbufferSurface Not implement");
+  if (auto display = egl::DisplayManager::Instance()->FindDispay(dpy);
+      display) {
+    return display->CreatePbufferSurface(config, attrib_list);
+  }
+  ALOGD("eglCreatePbufferSurface display %p", dpy);
   return EGL_NO_SURFACE;
 }
 

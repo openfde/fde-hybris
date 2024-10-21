@@ -86,6 +86,8 @@ class Display {
   Surface *CreatePlatformWindowSurfaceEXT(EGLConfig config, void *native_window,
                                           const EGLint *attrib_list);
 
+  EGLSurface CreatePbufferSurface(EGLConfig config, const EGLint *attrib_list);
+
   EGLBoolean DestroySurface(EGLSurface egl_surf);
 
   EGLBoolean QuerySurface(EGLSurface egl_surf, EGLint attribute, EGLint *value);

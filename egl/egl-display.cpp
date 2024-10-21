@@ -245,6 +245,12 @@ Surface *Display::CreatePlatformWindowSurfaceEXT(EGLConfig config,
   return CreatePlatformWindowSurface(config, native_window, list);
 }
 
+EGLSurface Display::CreatePbufferSurface(EGLConfig config,
+                                         const EGLint *attrib_list) {
+  return proxy_->Api().eglCreatePbufferSurface(egl_dpy_.get(), config,
+                                               attrib_list);
+}
+
 void Display::SetParameters(EGLenum platform, void *native_display,
                             const EGLAttrib *attrib_list) {
   parameters_ = ParameterT{platform, native_display, attrib_list};
