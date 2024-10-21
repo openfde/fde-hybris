@@ -2,7 +2,6 @@
 
 #include <dlfcn.h>
 #include <fcntl.h>
-#include <gbm.h>
 #include <log/log.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -28,8 +27,6 @@ namespace {
 
 constexpr char kEglLibName[] = "libEGL.so.1";  // soname
 constexpr char kEglLibEnvName[] = "HYBRIS-EGL";
-
-constexpr char kRenderDevPath[] = "/dev/dri/card0";
 
 constexpr char kEglPlatformAndroid[] = "EGL_KHR_platform_android";
 
@@ -178,31 +175,13 @@ bool EglProxy::Initialize() {
     return false;
   }
 
-  auto fd = open(kRenderDevPath, O_RDWR | O_CLOEXEC);
-  if (fd < 0) {
-    ALOGE("open %s failed: %s", kRenderDevPath, strerror(errno));
-    return false;
-  }
-  auto gbm_dpy =
-      std::shared_ptr<gbm_device>(gbm_create_device(fd), [fd](gbm_device *dev) {
-        if (dev) {
-          gbm_device_destroy(dev);
-        }
-        close(fd);
-      });
-  if (!gbm_dpy) {
-    ALOGE("Create Native Display failed");
-    close(fd);
-    return false;
-  }
   auto target = EGL_PLATFORM_GBM_KHR;
   EGLDisplay egl_dpy = EGL_NO_DISPLAY;
 
   int32_t egl_major = kEglMajorVersion;
   int32_t egl_minor = 0;
   if (ok_15 && api_.eglGetPlatformDisplay) {
-    auto native_dpy = reinterpret_cast<EGLNativeDisplayType>(gbm_dpy.get());
-    egl_dpy = api_.eglGetPlatformDisplay(target, native_dpy, nullptr);
+    egl_dpy = api_.eglGetPlatformDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
     egl_minor = kEglMinorCurrentVersion;
   } else if (ok_14 && api_.eglGetProcAddress) {
     if (auto get_display_addr =
@@ -210,7 +189,7 @@ bool EglProxy::Initialize() {
         get_display_addr) {
       auto GetDisplay =
           reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(get_display_addr);
-      egl_dpy = GetDisplay(target, gbm_dpy.get(), nullptr);
+      egl_dpy = GetDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
       egl_minor = kEglMinorMinVersion;
     }
   }

@@ -19,64 +19,6 @@ std::vector<std::string> SplitBySpace(std::string str) {
   return words;
 }
 
-int32_t GetHalFromFromGbmFormat(int32_t gbm_format) {
-  switch (gbm_format) {
-    // case GBM_FORMAT_R8:
-    // case GBM_FORMAT_R16:
-    // case GBM_FORMAT_GR88:
-    // case GBM_FORMAT_GR1616:
-    // case GBM_FORMAT_ARGB1555:
-    case GBM_FORMAT_RGB565:
-    case GBM_FORMAT_BGR565:
-      return HAL_PIXEL_FORMAT_RGB_565;
-    case GBM_FORMAT_ARGB8888:
-      // return HAL_PIXEL_FORMAT_BGRA_8888;
-    case GBM_FORMAT_ABGR8888:
-      return HAL_PIXEL_FORMAT_RGBA_8888;
-    case GBM_FORMAT_XRGB8888:
-    case GBM_FORMAT_XBGR8888:
-      return HAL_PIXEL_FORMAT_RGBX_8888;
-    // case GBM_FORMAT_XBGR16161616:
-    case GBM_FORMAT_XBGR16161616F:
-    case GBM_FORMAT_ABGR16161616F:
-      return HAL_PIXEL_FORMAT_RGBA_FP16;
-    case GBM_FORMAT_XRGB2101010:
-    case GBM_FORMAT_ARGB2101010:
-    case GBM_FORMAT_XBGR2101010:
-    case GBM_FORMAT_ABGR2101010:
-      return HAL_PIXEL_FORMAT_RGBA_1010102;
-    default:
-      ALOGW("unsupported gbm buffer format %s",
-            StringFourcc(gbm_format).c_str());
-  }
-  return EGL_DONT_CARE;
-}
-
-int32_t GetGbmFormatFromHalFormat(int32_t hal_format) {
-  switch (hal_format) {
-    case HAL_PIXEL_FORMAT_RGB_565:
-      return GBM_FORMAT_RGB565;
-    case HAL_PIXEL_FORMAT_BGRA_8888:
-    case HAL_PIXEL_FORMAT_RGBA_8888:
-      return GBM_FORMAT_ARGB8888;
-    case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
-      /*
-       * HACK: Hardcode this to RGBX_8888 as per cros_gralloc hack.
-       * TODO: Remove this once https://issuetracker.google.com/32077885 is
-       * fixed.
-       */
-    case HAL_PIXEL_FORMAT_RGBX_8888:
-      return GBM_FORMAT_XRGB8888;
-    case HAL_PIXEL_FORMAT_RGBA_FP16:
-      return GBM_FORMAT_ABGR16161616F;
-    case HAL_PIXEL_FORMAT_RGBA_1010102:
-      return GBM_FORMAT_ABGR2101010;
-    default:
-      break;
-  }
-  return EGL_DONT_CARE;
-}
-
 std::string SerializeExtensions(
     const std::vector<std::string> &extensions,
     const std::set<std::string> &exclude_extensions) {

@@ -21,7 +21,6 @@
 #include "egl-misc.h"
 #include "egl-proxy.h"
 #include "egl-surface.h"
-#include "gbm.h"
 #include "u_gralloc/u_gralloc.h"
 
 #define HYBRIS_GET_SYMBOL_ADDRESS(symbol) \

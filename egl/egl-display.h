@@ -15,21 +15,16 @@
 #include "egl-image.h"
 #include "egl-proxy.h"
 #include "egl-surface.h"
-#include "gbm.h"
-
-extern "C" {
-struct gbm_device;
-}
 
 namespace egl {
 
 class Display;
 using DisplayPtr = std::shared_ptr<Display>;
 
-using GbmDevicePtr = std::shared_ptr<gbm_device>;
-
 class DisplayManager;
 using DisplayManagerPtr = std::shared_ptr<DisplayManager>;
+
+class HalPixelFormat;
 
 class DisplayManager {
  public:
@@ -147,12 +142,9 @@ class AndroidDisplay : public Display {
   EGLBoolean GetConfigAttrib(EGLConfig config, EGLint attribute,
                              EGLint *value) override;
 
-  gbm_device *GetGbmDevice();
-
  private:
-  GbmDevicePtr gbm_;
-  bool inited_gbm_ = false;
-  std::mutex mtx_;
+  EGLBoolean GetFormatSizeFromConfig(EGLConfig config,
+                                     HalPixelFormat &pixel_format);
 };
 
 class GbmDisplay : public Display {

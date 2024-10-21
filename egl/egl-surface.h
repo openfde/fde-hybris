@@ -10,14 +10,11 @@
 #include <vector>
 
 #include "egl-proxy.h"
-#include "gbm.h"
 
 namespace egl {
 
 class Surface;
 using SurfacePtr = std::shared_ptr<Surface>;
-
-using GbmSurfacePtr = std::shared_ptr<gbm_surface>;
 
 class Surface {
  public:
@@ -44,9 +41,8 @@ class Surface {
 
 class WindowSurface : public Surface {
  public:
-  WindowSurface(EGLDisplay egl_dpy, EglProxy *proxy, ANativeWindow *window,
-                gbm_device *gbm)
-      : Surface(egl_dpy, proxy), native_window_(window), gbm_(gbm) {}
+  WindowSurface(EGLDisplay egl_dpy, EglProxy *proxy, ANativeWindow *window)
+      : Surface(egl_dpy, proxy), native_window_(window) {}
 
   ~WindowSurface();
 
@@ -75,8 +71,6 @@ class WindowSurface : public Surface {
  private:
   ANativeWindow *native_window_{};
   ANativeWindowBuffer *native_buffer_{};
-  gbm_device *gbm_{};
-  GbmSurfacePtr gbm_surf_;
   CreateStatePtr created_state_{};
 
   int32_t in_fence_fd_ = -1;

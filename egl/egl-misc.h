@@ -10,8 +10,6 @@
 namespace egl::misc {
 
 std::vector<std::string> SplitBySpace(std::string str);
-int32_t GetHalFromFromGbmFormat(int32_t gbm_format);
-int32_t GetGbmFormatFromHalFormat(int32_t hal_format);
 
 std::string SerializeExtensions(
     const std::vector<std::string> &extensions,
@@ -30,11 +28,11 @@ OutputType *ConvertAttributes(const InputType *attrib_list,
       attrib_list += 2;
     }
   }
-  out_attribs.push_back(EGL_NONE);
-  if (attrib_list) {
-    return out_attribs.data();
+  if (out_attribs.empty()) {
+    return nullptr;
   }
-  return nullptr;
+  out_attribs.push_back(EGL_NONE);
+  return out_attribs.data();
 }
 
 template <typename OutputType, typename InputType>
