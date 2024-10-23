@@ -20,11 +20,15 @@ class HalPixelFormat {
 
   int32_t PixelFormat() const { return format_; }
 
+  GLenum TextureInternalFormat() const { return tex_internal_format_; }
+
  private:
   int32_t red_size_{};
   int32_t green_size_{};
   int32_t blue_size_{};
   int32_t alpha_size_{};
+
+  GLenum tex_internal_format_{};
 
   int32_t format_ = -1;
 };

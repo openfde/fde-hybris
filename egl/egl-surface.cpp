@@ -56,6 +56,12 @@ void Surface::SetEglSurface(EGLSurface egl_surf) {
   }
 }
 
+WindowSurface::WindowSurface(EGLDisplay egl_dpy, EglProxyPtr proxy,
+                             ANativeWindow *window)
+    : Surface(egl_dpy, proxy), native_window_(window) {
+  blit_ = std::make_shared<BlitFramebuffer>(proxy_, egl_dpy_);
+}
+
 WindowSurface::~WindowSurface() {
   DestroySurface();
   CloseFenceFd(in_fence_fd_);
@@ -121,45 +127,12 @@ EGLBoolean WindowSurface::SwapBuffers() {
     return EGL_FALSE;
   }
 
-  auto image =
-      std::make_shared<AndroidBufferImage>(egl_dpy_, proxy_, native_buffer_);
-
   auto created_width = created_state_->width;
   auto created_height = created_state_->height;
 
   SyncWait(in_fence_fd_);
 
-  auto egl_image = image->CreateImage(EGL_NO_CONTEXT, nullptr);
-  if (egl_image == EGL_NO_IMAGE) {
-    ALOGD("eglSwapBuffers display %p surface %p failed : %s", egl_dpy_, this,
-          proxy_->StrLastError().c_str());
-    return false;
-  }
-
-  GLuint tmp_tex = {};
-  GLint curr_tex_bind = {};
-  GLint prev_read_fbo = {};
-  glGetIntegerv(GL_TEXTURE_BINDING_2D, &curr_tex_bind);
-  glGenTextures(1, &tmp_tex);
-  glBindTexture(GL_TEXTURE_2D, tmp_tex);
-  glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image);
-
-  // gles3
-  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read_fbo);
-  if (prev_read_fbo != 0) {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-  }
-
-  glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, created_width,
-                      created_height);
-
-  if (prev_read_fbo != 0) {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev_read_fbo);
-  }
-  glDeleteTextures(1, &tmp_tex);
-  glBindTexture(GL_TEXTURE_2D, curr_tex_bind);
-
-  proxy_->Api().eglDestroyImage(egl_dpy_, egl_image);
+  blit_->Blit(native_buffer_);
 
   // clear GL errors, because its possible that the fbo format does not match
   // the format of the read buffer, in the case of OpenGL ES 3.1 and integer
@@ -167,7 +140,6 @@ EGLBoolean WindowSurface::SwapBuffers() {
   glGetError();
 
   glFinish();
-  image.reset();
   QueueBuffer();
 
   GLsizei width = ANativeWindow_getWidth(native_window_);

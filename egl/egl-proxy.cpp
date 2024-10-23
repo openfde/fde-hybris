@@ -261,7 +261,7 @@ bool EglProxy::Initialize() {
   return ok_display;
 }
 
-EglProxy *EglProxy::Instance() {
+EglProxyPtr &EglProxy::Instance() {
   static bool inited = false;
   static EglProxyPtr egl{};
   static std::mutex mtx{};
@@ -277,7 +277,7 @@ EglProxy *EglProxy::Instance() {
     ALOGE("Load and initialize egl proxy failed");
     // abort();
   }
-  return egl.get();
+  return egl;
 }
 
 std::shared_ptr<void> EglProxy::LoadLibrary() {

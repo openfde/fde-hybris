@@ -78,7 +78,7 @@ using EglProxyPtr = std::shared_ptr<EglProxy>;
 
 class EglProxy {
  public:
-  static EglProxy *Instance();
+  static EglProxyPtr &Instance();
 
   EglProxy(std::shared_ptr<void> handle) : handle_(std::move(handle)) {}
 

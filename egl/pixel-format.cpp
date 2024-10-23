@@ -1,6 +1,36 @@
 #include "pixel-format.h"
 
+// #include <GLES/gl.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#include <GLES3/gl3.h>
+#include <GLES3/gl3ext.h>
 #include <system/graphics-base.h>
+
+namespace {
+
+GLenum ConvertToTexInternalFormat(int32_t pixel_format) {
+  GLenum tex_internal_format = GL_RGBA8;
+  switch (pixel_format) {
+    case HAL_PIXEL_FORMAT_RGBA_8888:
+      tex_internal_format = GL_RGBA8;
+      break;
+    case HAL_PIXEL_FORMAT_RGBX_8888:
+      tex_internal_format = GL_RGB8;
+      break;
+    case HAL_PIXEL_FORMAT_RGB_565:
+      tex_internal_format = GL_RGB565;
+      break;
+    case HAL_PIXEL_FORMAT_RGBA_1010102:
+      tex_internal_format = GL_UNSIGNED_INT_10_10_10_2_OES;
+      break;
+    default:
+      break;
+  }
+  return tex_internal_format;
+}
+
+}  // namespace
 
 namespace egl {
 
@@ -33,6 +63,7 @@ HalPixelFormat::HalPixelFormat(int32_t format) : format_(format) {
     default:
       break;
   }
+  tex_internal_format_ = ConvertToTexInternalFormat(format_);
 }
 
 bool HalPixelFormat::BuildFormat(int32_t red_size, int32_t green_size,
@@ -65,6 +96,7 @@ bool HalPixelFormat::BuildFormat(int32_t red_size, int32_t green_size,
   green_size_ = green_size;
   blue_size_ = blue_size;
   alpha_size_ = alpha_size;
+  tex_internal_format_ = ConvertToTexInternalFormat(format_);
   return true;
 }
 

@@ -67,7 +67,7 @@ class Display {
   };
 
  public:
-  Display(EglProxy *proxy) : proxy_(proxy) {}
+  Display(EglProxyPtr proxy) : proxy_(std::move(proxy)) {}
   virtual ~Display();
 
   EGLDisplay GetEglDisplay() { return egl_dpy_.get(); }
@@ -120,7 +120,7 @@ class Display {
   const SurfacePtr &FindSurfaceByEgl(EGLSurface egl_surf);
 
   std::shared_ptr<void> egl_dpy_;
-  EglProxy *proxy_{};
+  EglProxyPtr proxy_{};
   std::string extensions_;
   std::vector<SurfacePtr> surfaces_;
   std::mutex mtx_;
@@ -131,7 +131,7 @@ class Display {
 
 class AndroidDisplay : public Display {
  public:
-  AndroidDisplay(EglProxy *proxy) : Display(proxy) {}
+  AndroidDisplay(EglProxyPtr proxy) : Display(std::move(proxy)) {}
 
   EGLDisplay GetPlatformDisplay(void *native_display,
                                 const EGLAttrib *attrib_list) override;
@@ -151,7 +151,7 @@ class AndroidDisplay : public Display {
 
 class GbmDisplay : public Display {
  public:
-  GbmDisplay(EglProxy *proxy) : Display(proxy) {}
+  GbmDisplay(EglProxyPtr proxy) : Display(proxy) {}
 
   EGLDisplay GetPlatformDisplay(void *native_display,
                                 const EGLAttrib *attrib_list) override;

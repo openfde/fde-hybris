@@ -357,12 +357,14 @@ Image *Display::CreateImage(EGLContext ctx, EGLenum target,
     image = std::make_shared<AndroidBufferImage>(dpy, proxy_, native_buffer);
   } else if (kGlImageTargets.find(target) != kGlImageTargets.end()) {
     auto name = static_cast<GLuint>(reinterpret_cast<uintptr_t>(buffer));
-    image = std::make_shared<GlBufferImage>(dpy, proxy_, target, name);
+    image = std::make_shared<GlBufferImage>(dpy, proxy_, target, name, ctx,
+                                            attrib_list);
   } else {
     // EGL_LINUX_DMA_BUF_EXT or EGL_WAYLAND_BUFFER_WL
-    image = std::make_shared<PassthroughImage>(dpy, proxy_, target, buffer);
+    image = std::make_shared<PassthroughImage>(dpy, proxy_, target, buffer, ctx,
+                                               attrib_list);
   }
-  if (auto egl_image = image->CreateImage(ctx, attrib_list); egl_image) {
+  if (auto egl_image = image->CreateImage(); egl_image) {
     image_manager_.AddImage(image);
     return image.get();
   }
