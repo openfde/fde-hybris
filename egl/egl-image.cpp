@@ -58,8 +58,10 @@ EGLBoolean Image::DestroyImage() {
 }
 
 AndroidBufferImage::AndroidBufferImage(EGLDisplay egl_dpy, EglProxyPtr proxy,
-                                       ANativeWindowBuffer *buffer)
+                                       ANativeWindowBuffer *buffer,
+                                       const EGLAttrib *attrib_list)
     : Image(egl_dpy, proxy) {
+  attribs_ = misc::DupAttributes(attrib_list);
   if (buffer) {
     auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(buffer);
     AHardwareBuffer_acquire(hardware_buffer);
@@ -87,16 +89,17 @@ EGLImage AndroidBufferImage::CreateImage() {
     return EGL_NO_IMAGE;
   }
 
-  EGLAttrib attribs[47];
-  if (!FillAttribs(native_buffer, sizeof(attribs) / sizeof(*attribs),
-                   attribs)) {
+  std::vector<EGLAttrib> attribs(47);
+  if (!FillAttribs(native_buffer, attribs.size(), attribs.data())) {
     // display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
     ALOGD("Cannot get native buffer info %p", native_buffer);
     return EGL_NO_IMAGE;
   }
 
+  attribs.resize(misc::EglAttrbCount(attribs.data()) * 2 + 1);
+  misc::ApendAttributes(attribs_.data(), attribs);
   egl_image_ = proxy_->Api().eglCreateImage(
-      egl_dpy_, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs);
+      egl_dpy_, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data());
 
   return egl_image_;
 }

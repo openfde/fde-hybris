@@ -354,7 +354,8 @@ Image *Display::CreateImage(EGLContext ctx, EGLenum target,
   if (target == EGL_NATIVE_BUFFER_ANDROID) {
     // EGL_ANDROID_image_native_buffer
     auto native_buffer = reinterpret_cast<ANativeWindowBuffer *>(buffer);
-    image = std::make_shared<AndroidBufferImage>(dpy, proxy_, native_buffer);
+    image = std::make_shared<AndroidBufferImage>(dpy, proxy_, native_buffer,
+                                                 attrib_list);
   } else if (kGlImageTargets.find(target) != kGlImageTargets.end()) {
     auto name = static_cast<GLuint>(reinterpret_cast<uintptr_t>(buffer));
     image = std::make_shared<GlBufferImage>(dpy, proxy_, target, name, ctx,

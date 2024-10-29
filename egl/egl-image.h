@@ -65,7 +65,8 @@ class Image {
 class AndroidBufferImage : public Image {
  public:
   AndroidBufferImage(EGLDisplay egl_dpy, EglProxyPtr proxy,
-                     ANativeWindowBuffer *buffer);
+                     ANativeWindowBuffer *buffer,
+                     const EGLAttrib *attrib_list = nullptr);
 
   EGLImage CreateImage() override;
 
@@ -76,6 +77,7 @@ class AndroidBufferImage : public Image {
                          size_t attribs_size, EGLAttrib *attribs);
 
   std::shared_ptr<ANativeWindowBuffer> buffer_;
+  std::vector<EGLAttrib> attribs_;
 };
 
 class GlBufferImage : public Image {
