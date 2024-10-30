@@ -68,6 +68,8 @@ class WindowSurface : public Surface {
   void QueueBuffer();
   void CancelBuffer();
 
+  EGLBoolean MaybeResize();
+
  private:
   ANativeWindow *native_window_{};
   ANativeWindowBuffer *native_buffer_{};

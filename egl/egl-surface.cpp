@@ -127,9 +127,6 @@ EGLBoolean WindowSurface::SwapBuffers() {
     return EGL_FALSE;
   }
 
-  auto created_width = created_state_->width;
-  auto created_height = created_state_->height;
-
   SyncWait(in_fence_fd_);
 
   blit_->Blit(native_buffer_);
@@ -140,29 +137,17 @@ EGLBoolean WindowSurface::SwapBuffers() {
   glGetError();
 
   glFinish();
+
   QueueBuffer();
-
-  GLsizei width = ANativeWindow_getWidth(native_window_);
-  GLsizei height = ANativeWindow_getHeight(native_window_);
-
-  if (created_width != width || created_height != height) {
-    DestroySurface();
-    if (auto egl_surf = CreateSurface(created_state_->config,
-                                      created_state_->attribs.data());
-        egl_surf == EGL_NO_SURFACE) {
-      return EGL_FALSE;
-    }
-  } else {
-    DequeueBuffer();
-  }
-
-  return EGL_TRUE;
+  DequeueBuffer();
+  return MaybeResize();
 }
 
 void WindowSurface::DequeueBuffer() {
-  assert(!native_buffer_);
-  CloseFenceFd(in_fence_fd_);
-  ANativeWindow_dequeueBuffer(native_window_, &native_buffer_, &in_fence_fd_);
+  if (!native_buffer_) {
+    CloseFenceFd(in_fence_fd_);
+    ANativeWindow_dequeueBuffer(native_window_, &native_buffer_, &in_fence_fd_);
+  }
 }
 
 void WindowSurface::QueueBuffer() {
@@ -177,6 +162,38 @@ void WindowSurface::CancelBuffer() {
     ANativeWindow_cancelBuffer(native_window_, native_buffer_, -1);
     native_buffer_ = nullptr;
   }
+}
+
+EGLBoolean WindowSurface::MaybeResize() {
+  auto created_width = created_state_->width;
+  auto created_height = created_state_->height;
+  GLsizei width = ANativeWindow_getWidth(native_window_);
+  GLsizei height = ANativeWindow_getHeight(native_window_);
+  if (created_width == width && created_height == height) {
+    return EGL_TRUE;
+  }
+  ALOGD("Window resized : %dx%d -> %dx%d", created_width, created_height, width,
+        height);
+  auto &api = proxy_->Api();
+  auto prev_context = api.eglGetCurrentContext();
+  auto prev_read_surf = api.eglGetCurrentSurface(EGL_READ);
+  auto prev_draw_surf = api.eglGetCurrentSurface(EGL_DRAW);
+  auto prev_surf = egl_surf_.get();
+  bool need_rebind = (prev_surf && (prev_read_surf == prev_surf ||
+                                    prev_draw_surf == prev_surf));
+  if (need_rebind) {
+    api.eglMakeCurrent(egl_dpy_, EGL_NO_SURFACE, EGL_NO_SURFACE,
+                       EGL_NO_CONTEXT);
+  }
+  DestroySurface();
+  auto egl_surf =
+      CreateSurface(created_state_->config, created_state_->attribs.data());
+  if (need_rebind) {
+    auto read_surf = (prev_read_surf == prev_surf) ? egl_surf : prev_read_surf;
+    auto draw_surf = (prev_draw_surf == prev_surf) ? egl_surf : prev_draw_surf;
+    api.eglMakeCurrent(egl_dpy_, read_surf, draw_surf, prev_context);
+  }
+  return (egl_surf != EGL_NO_SURFACE);
 }
 
 EGLSurface PassthroughSurface::CreateSurface(EGLConfig config,
