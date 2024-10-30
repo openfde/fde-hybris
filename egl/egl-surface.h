@@ -25,8 +25,11 @@ class Surface {
                                    const EGLAttrib *attrib_list) = 0;
   virtual EGLBoolean DestroySurface() = 0;
   virtual EGLBoolean QuerySurface(EGLint attribute, EGLint *value);
+  virtual EGLBoolean SurfaceAttrib(EGLint attribute, EGLint value);
 
   virtual EGLBoolean SwapBuffers();
+  virtual EGLBoolean SwapBuffersWithDamageKHR(const EGLint *rects,
+                                              EGLint n_rects);
 
   EGLSurface GetEglSurface() { return egl_surf_.get(); }
 
@@ -50,8 +53,11 @@ class WindowSurface : public Surface {
                            const EGLAttrib *attrib_list) override;
   EGLBoolean DestroySurface() override;
   EGLBoolean QuerySurface(EGLint attribute, EGLint *value) override;
+  EGLBoolean SurfaceAttrib(EGLint attribute, EGLint value) override;
 
   EGLBoolean SwapBuffers() override;
+  EGLBoolean SwapBuffersWithDamageKHR(const EGLint *rects,
+                                      EGLint n_rects) override;
 
  private:
   struct CreatedStateT {
@@ -77,6 +83,7 @@ class WindowSurface : public Surface {
   BlitFramebufferPtr blit_{};
 
   int32_t in_fence_fd_ = -1;
+  EGLint swap_behavior_ = EGL_BUFFER_DESTROYED;
 };
 
 class PassthroughSurface : public Surface {

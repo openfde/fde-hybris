@@ -44,8 +44,19 @@ EGLBoolean Surface::QuerySurface(EGLint attribute, EGLint *value) {
                                        value);
 }
 
+EGLBoolean Surface::SurfaceAttrib(EGLint attribute, EGLint value) {
+  return proxy_->Api().eglSurfaceAttrib(egl_dpy_, egl_surf_.get(), attribute,
+                                        value);
+}
+
 EGLBoolean Surface::SwapBuffers() {
   return proxy_->Api().eglSwapBuffers(egl_dpy_, egl_surf_.get());
+}
+
+EGLBoolean Surface::SwapBuffersWithDamageKHR(const EGLint *rects,
+                                             EGLint n_rects) {
+  return proxy_->Api().eglSwapBuffersWithDamageKHR(egl_dpy_, egl_surf_.get(),
+                                                   rects, n_rects);
 }
 
 void Surface::SetEglSurface(EGLSurface egl_surf) {
@@ -107,17 +118,28 @@ EGLBoolean WindowSurface::QuerySurface(EGLint attribute, EGLint *value) {
   }
   if (attribute == EGL_SURFACE_TYPE) {
     *value = EGL_WINDOW_BIT | EGL_PBUFFER_BIT;
-    return EGL_TRUE;
   } else if (attribute == EGL_NATIVE_VISUAL_ID) {
     *value = ANativeWindow_getFormat(native_window_);
+  } else if (attribute == EGL_SWAP_BEHAVIOR) {
+    *value = swap_behavior_;
+  } else if (!Surface::QuerySurface(attribute, value)) {
+    ALOGD("eglQuerySurface display %p surface %p attribute 0x%04X failed : %s",
+          egl_dpy_, this, attribute, proxy_->StrLastError().c_str());
+    return EGL_FALSE;
+  }
+  return EGL_TRUE;
+}
+
+EGLBoolean WindowSurface::SurfaceAttrib(EGLint attribute, EGLint value) {
+  if (attribute == EGL_SWAP_BEHAVIOR) {
+    if (value != EGL_BUFFER_PRESERVED && value != EGL_BUFFER_DESTROYED) {
+      // EGL_BAD_MATCH
+      return EGL_FALSE;
+    }
+    swap_behavior_ = value;
     return EGL_TRUE;
   }
-  if (Surface::QuerySurface(attribute, value)) {
-    return EGL_TRUE;
-  }
-  ALOGD("eglQuerySurface display %p surface %p attribute 0x%04X failed : %s",
-        egl_dpy_, this, attribute, proxy_->StrLastError().c_str());
-  return EGL_FALSE;
+  return Surface::SurfaceAttrib(attribute, value);
 }
 
 EGLBoolean WindowSurface::SwapBuffers() {
@@ -141,6 +163,13 @@ EGLBoolean WindowSurface::SwapBuffers() {
   QueueBuffer();
   DequeueBuffer();
   return MaybeResize();
+}
+
+EGLBoolean WindowSurface::SwapBuffersWithDamageKHR(const EGLint *rects,
+                                                   EGLint n_rects) {
+  (void)rects;
+  (void)n_rects;
+  return SwapBuffers();
 }
 
 void WindowSurface::DequeueBuffer() {

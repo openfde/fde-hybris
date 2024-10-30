@@ -70,7 +70,11 @@ struct Egl15 : public Egl14 {
   PFNEGLWAITSYNCPROC eglWaitSync = {};
 };
 
-struct EglApi : public Egl15 {};
+struct EglExteions {
+  PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC eglSwapBuffersWithDamageKHR = {};
+};
+
+struct EglApi : public Egl15, public EglExteions {};
 
 class EglProxy;
 
@@ -101,6 +105,7 @@ class EglProxy {
 
  private:
   void InitializeApi();
+  void InitializeApiExtensions();
   void ImplementEgl15Api();
 
   void ImplementByExtPlatorm();

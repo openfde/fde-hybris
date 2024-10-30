@@ -131,6 +131,7 @@ bool EglProxy::Initialize() {
     return false;
   }
   InitializeApi();
+  InitializeApiExtensions();
 
   auto native_client_extensions =
       api_.eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
@@ -363,6 +364,23 @@ void EglProxy::InitializeApi() {
   GETSYMBOLADDR(eglCreatePlatformWindowSurface);
   GETSYMBOLADDR(eglCreatePlatformPixmapSurface);
   GETSYMBOLADDR(eglWaitSync);
+
+#undef GETSYMBOLADDR
+}
+
+void EglProxy::InitializeApiExtensions() {
+  auto &api = api_;
+
+  if (!api.eglGetProcAddress) {
+    return;
+  }
+#define GETSYMBOLADDR(symbol)                                  \
+  do {                                                         \
+    auto addr = api.eglGetProcAddress(#symbol);                \
+    api.symbol = reinterpret_cast<decltype(api.symbol)>(addr); \
+  } while (0)
+
+  GETSYMBOLADDR(eglSwapBuffersWithDamageKHR);
 
 #undef GETSYMBOLADDR
 }

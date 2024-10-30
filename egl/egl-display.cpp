@@ -478,6 +478,7 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
       auto &type = *std::next(it);
       if ((type & EGL_WINDOW_BIT) != 0) {
         type &= ~EGL_WINDOW_BIT;
+        type &= ~EGL_SWAP_BEHAVIOR_PRESERVED_BIT;
         type |= EGL_PBUFFER_BIT;
       }
     } else if (*it == EGL_NATIVE_VISUAL_ID) {
