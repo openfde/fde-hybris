@@ -473,6 +473,7 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
   auto attribs = egl::misc::DupAttributes(attrib_list);
 
   EGLint native_visual_id = -1;
+  bool has_surface_type = false;
   for (auto it = attribs.begin(); *it != EGL_NONE; it += 2) {
     if (*it == EGL_SURFACE_TYPE) {
       auto &type = *std::next(it);
@@ -480,6 +481,7 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
         type &= ~EGL_WINDOW_BIT;
         type &= ~EGL_SWAP_BEHAVIOR_PRESERVED_BIT;
         type |= EGL_PBUFFER_BIT;
+        has_surface_type = true;
       }
     } else if (*it == EGL_NATIVE_VISUAL_ID) {
       native_visual_id = *std::next(it);
@@ -518,6 +520,15 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
     };
     misc::ApendAttributes(attribs.data(), size_config);
     std::swap(attribs, size_config);
+  }
+
+  if (!has_surface_type) {
+    const EGLint surface_config[] = {
+        EGL_SURFACE_TYPE,
+        EGL_PBUFFER_BIT,
+        EGL_NONE,
+    };
+    misc::ApendAttributes(surface_config, attribs);
   }
 
   auto ret = api.eglChooseConfig(dpy, attribs.data(), configs, config_size,
