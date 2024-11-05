@@ -146,6 +146,27 @@ const GLubyte kIndices[] = {
 
 const GLint kIndicesPerDraw = 6;
 
+class ShadeContextGuard {
+ public:
+  ShadeContextGuard() {
+    glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &bound_element_array_);
+    glGetIntegerv(GL_ARRAY_BUFFER_BINDING, &bound_array_);
+    glGetIntegerv(GL_CURRENT_PROGRAM, &prev_program_);
+  }
+
+  ~ShadeContextGuard() {
+    glUseProgram(static_cast<GLuint>(prev_program_));
+    glBindBuffer(GL_ARRAY_BUFFER, static_cast<GLuint>(bound_array_));
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER,
+                 static_cast<GLuint>(bound_element_array_));
+  }
+
+ private:
+  GLint bound_element_array_ = {};
+  GLint bound_array_ = {};
+  GLint prev_program_ = {};
+};
+
 }  // namespace
 
 TextureDraw::TextureDraw()
@@ -181,6 +202,8 @@ TextureDraw::TextureDraw()
     mProgram = 0;
     return;
   }
+
+  ShadeContextGuard guard;
 
   glUseProgram(mProgram);
 
@@ -229,8 +252,6 @@ TextureDraw::TextureDraw()
   glUseProgram(0);
   glDisableVertexAttribArray(mPositionSlot);
   glDisableVertexAttribArray(mInCoordSlot);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 
 bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
@@ -240,6 +261,7 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
     ERR("%s: no program\n", __FUNCTION__);
     return false;
   }
+  ShadeContextGuard guard;
 
   glUseProgram(mProgram);
 
@@ -361,8 +383,6 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
   glUseProgram(0);
   glDisableVertexAttribArray(mPositionSlot);
   glDisableVertexAttribArray(mInCoordSlot);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
-  glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 
   return true;
 }
