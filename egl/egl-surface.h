@@ -70,6 +70,8 @@ class WindowSurface : public Surface {
   };
   using CreateStatePtr = std::shared_ptr<CreatedStateT>;
 
+  EGLSurface CreateNewSurface(const CreatedStateT &created_state);
+
   void DequeueBuffer();
   void QueueBuffer();
   void CancelBuffer();
