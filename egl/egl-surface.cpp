@@ -270,13 +270,20 @@ EGLBoolean WindowSurface::MaybeResize() {
 
 EGLSurface PassthroughSurface::CreateSurface(EGLConfig config,
                                              const EGLAttrib *attrib_list) {
-  if (auto egl_surf = proxy_->Api().eglCreatePlatformWindowSurface(
-          egl_dpy_, config, native_window_, attrib_list);
-      egl_surf != EGL_NO_SURFACE) {
-    SetEglSurface(egl_surf);
-    return egl_surf;
+  EGLSurface egl_surf = EGL_NO_SURFACE;
+  auto &api = proxy_->Api();
+  if (native_window_ != nullptr) {
+    egl_surf = api.eglCreatePlatformWindowSurface(egl_dpy_, config,
+                                                  native_window_, attrib_list);
+  } else {
+    auto attribs = misc::ConvertAttribToInt(attrib_list);
+    egl_surf = api.eglCreatePbufferSurface(egl_dpy_, config, attribs.data());
   }
-  return EGL_NO_SURFACE;
+
+  if (egl_surf != EGL_NO_SURFACE) {
+    SetEglSurface(egl_surf);
+  }
+  return egl_surf;
 }
 
 EGLBoolean PassthroughSurface::DestroySurface() {

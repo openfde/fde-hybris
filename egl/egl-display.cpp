@@ -247,8 +247,15 @@ Surface *Display::CreatePlatformWindowSurfaceEXT(EGLConfig config,
 
 EGLSurface Display::CreatePbufferSurface(EGLConfig config,
                                          const EGLint *attrib_list) {
-  return proxy_->Api().eglCreatePbufferSurface(egl_dpy_.get(), config,
-                                               attrib_list);
+  auto surface =
+      std::make_shared<PassthroughSurface>(GetEglDisplay(), proxy_, nullptr);
+  std::vector<EGLAttrib> attribs;
+  auto list = misc::ConvertAttributes(attrib_list, attribs);
+  if (auto egl_surf = surface->CreateSurface(config, list);
+      egl_surf != EGL_NO_SURFACE && AddSurface(surface)) {
+    return surface.get();
+  }
+  return EGL_NO_SURFACE;
 }
 
 void Display::SetParameters(EGLenum platform, void *native_display,
