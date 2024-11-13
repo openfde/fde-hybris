@@ -22,7 +22,7 @@ GLenum ConvertToTexInternalFormat(int32_t pixel_format) {
       tex_internal_format = GL_RGB565;
       break;
     case HAL_PIXEL_FORMAT_RGBA_1010102:
-      tex_internal_format = GL_UNSIGNED_INT_10_10_10_2_OES;
+      tex_internal_format = GL_RGB10_A2;
       break;
     default:
       break;

@@ -1,13 +1,11 @@
 #include "texture-draw.h"
 
 #include <assert.h>
+#include <log/log.h>
 #include <stdio.h>
 #include <string.h>
-#include <syslog.h>
 
 #include <string>
-
-#define ERR(...) fprintf(stderr, __VA_ARGS__)
 
 namespace {
 
@@ -197,7 +195,7 @@ TextureDraw::TextureDraw()
   if (success == GL_FALSE) {
     GLchar messages[256];
     glGetProgramInfoLog(mProgram, sizeof(messages), 0, &messages[0]);
-    ERR("%s: Could not create/link program: %s\n", __FUNCTION__, messages);
+    ALOGE("%s: Could not create/link program: %s", __FUNCTION__, messages);
     glDeleteProgram(mProgram);
     mProgram = 0;
     return;
@@ -258,7 +256,7 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
                            bool wantOverlay, float clipWidthRatio,
                            float clipHeightRatio) {
   if (!mProgram) {
-    ERR("%s: no program\n", __FUNCTION__);
+    ALOGE("%s: no program", __FUNCTION__);
     return false;
   }
   ShadeContextGuard guard;
@@ -266,9 +264,8 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
   glUseProgram(mProgram);
 
 #ifndef NDEBUG
-  GLenum err = glGetError();
-  if (err != GL_NO_ERROR) {
-    ERR("%s: Could not use program error=0x%x\n", __FUNCTION__, err);
+  if (auto err = glGetError(); err != GL_NO_ERROR) {
+    ALOGE("%s: Could not use program error=0x%04X", __FUNCTION__, err);
   }
 #endif
 
@@ -293,9 +290,8 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
   }
 
 #ifndef NDEBUG
-  err = glGetError();
-  if (err != GL_NO_ERROR) {
-    ERR("%s: Could not bind GL_ARRAY_BUFFER error=0x%x\n", __FUNCTION__, err);
+  if (auto err = glGetError(); err != GL_NO_ERROR) {
+    ALOGE("%s: Could not bind GL_ARRAY_BUFFER error=0x%04X", __FUNCTION__, err);
   }
 #endif
 
@@ -304,10 +300,9 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
                         0);
 
 #ifndef NDEBUG
-  err = glGetError();
-  if (err != GL_NO_ERROR) {
-    ERR("%s: Could glVertexAttribPointer with mPositionSlot error=0x%x\n",
-        __FUNCTION__, err);
+  if (auto err = glGetError(); err != GL_NO_ERROR) {
+    ALOGE("%s: Could glVertexAttribPointer with mPositionSlot error=0x%04X",
+          __FUNCTION__, err);
   }
 #endif
 
@@ -333,7 +328,7 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
   if (validState == GL_FALSE) {
     GLchar messages[256] = {};
     glGetProgramInfoLog(mProgram, sizeof(messages), 0, &messages[0]);
-    ERR("%s: Could not run program: '%s'\n", __FUNCTION__, messages);
+    ALOGE("%s: Could not run program: '%s'", __FUNCTION__, messages);
     return false;
   }
 #endif
@@ -341,10 +336,9 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
   // Do the rendering.
   glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mIndexBuffer);
 #ifndef NDEBUG
-  err = glGetError();
-  if (err != GL_NO_ERROR) {
-    ERR("%s: Could not glBindBuffer(GL_ELEMENT_ARRAY_BUFFER) error=0x%x\n",
-        __FUNCTION__, err);
+  if (auto err = glGetError(); err != GL_NO_ERROR) {
+    ALOGE("%s: Could not glBindBuffer(GL_ELEMENT_ARRAY_BUFFER) error=0x%04X",
+          __FUNCTION__, err);
   }
 #endif
 
@@ -374,7 +368,7 @@ bool TextureDraw::drawImpl(GLuint texture, float rotation, float dx, float dy,
   glGetUniformfv(mProgram, mScaleSlot, scale);
 
   if (auto err = glGetError(); err != GL_NO_ERROR) {
-    ERR("%s: Could not glDrawElements() error=0x%x\n", __FUNCTION__, err);
+    ALOGE("%s: Could not glDrawElements() error=0x%04X", __FUNCTION__, err);
   }
 
   // TODO(digit): Restore previous program state.

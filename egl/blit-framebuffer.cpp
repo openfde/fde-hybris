@@ -43,7 +43,7 @@ class FrameBufferBinder {
                            tex_, 0);
     if (auto status = glCheckFramebufferStatus(fb_target_);
         status != GL_FRAMEBUFFER_COMPLETE_OES) {
-      ALOGE("ColorBuffer::bindFbo: FBO not complete: 0x%#x", status);
+      ALOGE("glFramebufferTexture2D: FBO not complete: 0x%04X", status);
     }
   }
 
