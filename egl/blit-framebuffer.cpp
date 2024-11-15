@@ -12,12 +12,13 @@
 #include <GLES3/gl3.h>
 
 #include "pixel-format.h"
-#include "texture-draw.h"
 
 namespace {
 
 class FrameBufferBinder {
  public:
+  GLint GetFbo() const { return fbo_; }
+
   explicit FrameBufferBinder(GLenum fb_target, EGLImage image)
       : fb_target_(fb_target) {
     GLenum fb_bound = (fb_target_ == GL_READ_FRAMEBUFFER)
@@ -79,7 +80,8 @@ class Texture2DBinder {
   GLint prev_tex_{};
 };
 
-void CopyFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height) {
+void CopyFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height,
+                         GLint fbo = 0) {
   GLuint tmp_tex = {};
   GLint curr_tex_bind = {};
   GLint prev_read_fbo = {};
@@ -90,16 +92,17 @@ void CopyFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height) {
 
   // gles3
   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read_fbo);
-  if (prev_read_fbo != 0) {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+  if (prev_read_fbo != fbo) {
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
   }
 
   glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
 
-  if (prev_read_fbo != 0) {
+  if (prev_read_fbo != fbo) {
     glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev_read_fbo);
   }
 
+  glBindTexture(GL_TEXTURE_2D, curr_tex_bind);
   glDeleteTextures(1, &tmp_tex);
 }
 
@@ -248,7 +251,7 @@ void BlitFramebuffer::Blit(ANativeWindowBuffer *native_buffer) {
     CopyFromFramebuffer(texture_->EglImage(), width, height);
     FrameBufferBinder draw_fb{GL_DRAW_FRAMEBUFFER, egl_img};
     auto draw = GetDraw();
-    draw->DrawAndFlip(texture_->Id());
+    draw->Flip(texture_->Id());
     image->DestroyImage();
   }
 }
@@ -263,11 +266,6 @@ bool BlitFramebuffer::Resize(int32_t width, int32_t height,
   return texture_ != nullptr;
 }
 
-TextureDrawPtr &BlitFramebuffer::GetDraw() {
-  if (!draw_) {
-    draw_ = std::make_shared<TextureDraw>();
-  }
-  return draw_;
-}
+TextureFlipPtr &BlitFramebuffer::GetDraw() { return TextureFlip::Instance(); }
 
 }  // namespace egl

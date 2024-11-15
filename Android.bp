@@ -10,7 +10,7 @@ filegroup {
         "egl/egl-misc.cpp",
         "egl/egl-image.cpp",
         "egl/pixel-format.cpp",
-        "egl/texture-draw.cpp",
+        "egl/texture-flip.cpp",
         "egl/blit-framebuffer.cpp",
     ],
 }

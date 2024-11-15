@@ -6,7 +6,7 @@
 
 #include "egl-image.h"
 #include "egl-proxy.h"
-#include "texture-draw.h"
+#include "texture-flip.h"
 
 namespace egl {
 
@@ -23,7 +23,7 @@ class BlitFramebuffer {
  private:
   bool Resize(int32_t width, int32_t height, int32_t native_format);
 
-  TextureDrawPtr &GetDraw();
+  TextureFlipPtr &GetDraw();
 
   EglProxyPtr proxy_{};
   EGLDisplay egl_dpy_{};
@@ -31,7 +31,6 @@ class BlitFramebuffer {
   int32_t height_{};
   int32_t native_format_{};
   Texture2DPtr texture_{};
-  TextureDrawPtr draw_{};
 };
 
 using BlitFramebufferPtr = std::shared_ptr<BlitFramebuffer>;
