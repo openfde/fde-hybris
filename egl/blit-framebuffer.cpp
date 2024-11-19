@@ -6,7 +6,7 @@
 
 #include <cstring>
 
-#define GL_GLEXT_PROTOTYPES
+// #define GL_GLEXT_PROTOTYPES
 #include <GLES/glext.h>
 #include <GLES2/gl2ext.h>
 #include <GLES3/gl3.h>
@@ -14,6 +14,17 @@
 #include "pixel-format.h"
 
 namespace {
+
+void glEGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image) {
+  static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC EGLImageTargetTexture2DOES{};
+  if (!EGLImageTargetTexture2DOES) {
+    auto &proxy = egl::EglProxy::Instance();
+    EGLImageTargetTexture2DOES =
+        reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
+            proxy->Api().eglGetProcAddress("glEGLImageTargetTexture2DOES"));
+  }
+  return EGLImageTargetTexture2DOES(target, image);
+}
 
 class FrameBufferBinder {
  public:
