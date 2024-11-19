@@ -137,32 +137,40 @@ class VertexArrayBound {
 
 }  // namespace
 
-TextureFlipPtr& TextureFlip::Instance() {
-  static TextureFlipPtr flip;
-  static std::mutex mtx;
+TextureFlipPtr TextureFlip::Create() {
+  TextureFlipPtr flip;
+  if (auto version_str = reinterpret_cast<const char*>(glGetString(GL_VERSION));
+      version_str) {
+    if (strstr(version_str, "OpenGL ES 3.")) {
+      flip = std::make_shared<TextureFlipGles3>();
+    } else if (strstr(version_str, "OpenGL ES 2.")) {
+      flip = std::make_shared<TextureFlipGles2>();
+    } else {
+      ALOGE("Unsupported OpenGL ES version");
+    }
+  }
+  if (flip) {
+    flip->Initialize();
+  }
+  return flip;
+}
+
+TextureFlipPtr TextureFlip::Instance() {
+  static TextureFlipPtr flip{};
+  static std::mutex mtx{};
   static bool inited = false;
   if (!inited) {
     std::lock_guard<std::mutex> guard{mtx};
     if (!inited) {
-      if (auto version_str =
-              reinterpret_cast<const char*>(glGetString(GL_VERSION));
-          version_str) {
-        if (strstr(version_str, "OpenGL ES 3.")) {
-          flip = std::make_shared<TextureFlipGles3>();
-        } else if (strstr(version_str, "OpenGL ES 2.")) {
-          flip = std::make_shared<TextureFlipGles2>();
-        } else {
-          ALOGE("Unsupported OpenGL ES version");
-        }
-      }
-      if (flip) {
-        flip->Initialize();
-      }
+      flip = Create();
       std::atomic_thread_fence(std::memory_order::memory_order_release);
       inited = true;
     }
   }
 
+  if (!flip->InCurrentContext()) {
+    return Create();
+  }
   return flip;
 }
 
@@ -201,25 +209,30 @@ bool TextureFlip::Initialize() {
   glUniform1i(texture_slot_, 0);
 
   if (InitLocations()) {
-    // Validate program, just to be sure.
-    glValidateProgram(program_);
-    GLint validState = 0;
-    glGetProgramiv(program_, GL_VALIDATE_STATUS, &validState);
-    if (validState == GL_FALSE) {
+    if (auto err = glGetError(); err != GL_NO_ERROR) {
+      ALOGE("%s:%p, program %d initialize error=0x%04X", __FUNCTION__, this,
+            program_, err);
+    } else {
+      // Validate program, just to be sure.
+      glValidateProgram(program_);
+      GLint validState = 0;
+      glGetProgramiv(program_, GL_VALIDATE_STATUS, &validState);
+      if (validState == GL_TRUE) {
+        return true;
+      }
       GLchar messages[256] = {};
       glGetProgramInfoLog(program_, sizeof(messages), 0, &messages[0]);
-      ALOGE("%s: Could not run program: '%s'", __FUNCTION__, messages);
+      ALOGE("%s:%p, Could not run program: '%s'", __FUNCTION__, this, messages);
       glDeleteProgram(program_);
-      program_ = 0;
-      return false;
     }
   }
-  return true;
+  program_ = 0;
+  return false;
 }
 
 bool TextureFlip::Flip(GLuint texture) {
   if (!program_) {
-    ALOGE("%s: no program", __FUNCTION__);
+    ALOGE("%s:%p no program", __FUNCTION__, this);
     return false;
   }
 
@@ -235,18 +248,29 @@ bool TextureFlip::Flip(GLuint texture) {
   glBindTexture(GL_TEXTURE_2D, texture);
 
   if (auto err = glGetError(); err != GL_NO_ERROR) {
-    ALOGE("%s: Could not use program error=0x%04X", __FUNCTION__, err);
+    ALOGE("%s:%p Could not use program %d error=0x%04X", __FUNCTION__, this,
+          program_, err);
     return false;
   }
 
   FlipDraw();
 
   if (auto err = glGetError(); err != GL_NO_ERROR) {
-    ALOGE("%s: draw error=0x%04X", __FUNCTION__, err);
+    ALOGE("%s:%p, program %d draw error=0x%04X", __FUNCTION__, this, program_,
+          err);
     return false;
   }
   return true;
 }
+
+bool TextureFlip::InCurrentContext() const {
+  if (!program_) {
+    return true;
+  }
+  return glIsProgram(program_) && glIsBuffer(vertex_buffer_) && InContext();
+}
+
+bool TextureFlip::InContext() const { return true; }
 
 TextureFlip::~TextureFlip() {
   if (vertex_buffer_) {
@@ -255,8 +279,8 @@ TextureFlip::~TextureFlip() {
   if (fragment_shader_) {
     glDeleteShader(fragment_shader_);
   }
-  if (vertex_buffer_) {
-    glDeleteShader(vertex_buffer_);
+  if (vertex_shader_) {
+    glDeleteShader(vertex_shader_);
   }
   if (program_) {
     glDeleteProgram(program_);
@@ -268,7 +292,7 @@ bool TextureFlipGles2::InitLocations() {
   glGenBuffers(1, &vertex_buffer_);
   glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer_);
   glBufferData(GL_ARRAY_BUFFER, sizeof(kVertices), kVertices, GL_STATIC_DRAW);
-  return glGetError() != GL_NO_ERROR;
+  return true;
 }
 
 void TextureFlipGles2::FlipDraw() {
@@ -297,7 +321,8 @@ TextureFlipGles3::~TextureFlipGles3() {
 
 bool TextureFlipGles3::InitLocations() {
   glGenVertexArrays(1, &vertex_array_buffer_);
-
+  ALOGD("%s:%p, glGenVertexArrays(%d)", __FUNCTION__, this,
+        vertex_array_buffer_);
   VertexArrayBound bind{vertex_array_buffer_};
   // Create vertex and index buffers.
   glGenBuffers(1, &vertex_buffer_);
@@ -313,16 +338,21 @@ bool TextureFlipGles3::InitLocations() {
   glEnableVertexAttribArray(in_coord_slot_);
   glEnableVertexAttribArray(position_slot_);
 
-  return glGetError() != GL_NO_ERROR;
+  return true;
 }
 
 void TextureFlipGles3::FlipDraw() {
   VertexArrayBound bind{vertex_array_buffer_};
   if (auto err = glGetError(); err != GL_NO_ERROR) {
-    ALOGE("%s: bind error=0x%04X", __FUNCTION__, err);
+    ALOGE("%s:%p, bind vertex array buffer %d error=0x%04X", __FUNCTION__, this,
+          vertex_array_buffer_, err);
   }
   glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
   if (auto err = glGetError(); err != GL_NO_ERROR) {
     ALOGE("%s: draw error=0x%04X", __FUNCTION__, err);
   }
+}
+
+bool TextureFlipGles3::InContext() const {
+  return glIsVertexArray(vertex_array_buffer_);
 }

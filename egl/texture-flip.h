@@ -12,18 +12,23 @@ using TextureFlipPtr = std::shared_ptr<TextureFlip>;
 
 class TextureFlip {
  public:
-  virtual ~TextureFlip();
-
   bool Flip(GLuint texture);
 
-  bool Initialize();
+  virtual ~TextureFlip();
 
-  static TextureFlipPtr &Instance();
+  static TextureFlipPtr Instance();
 
  protected:
   TextureFlip() = default;
+
+  bool Initialize();
+  bool InCurrentContext() const;
+
   virtual bool InitLocations() = 0;
   virtual void FlipDraw() = 0;
+  virtual bool InContext() const;
+
+  static TextureFlipPtr Create();
 
  protected:
   GLint position_slot_ = {};
@@ -56,6 +61,7 @@ class TextureFlipGles3 : public TextureFlip {
  private:
   bool InitLocations() override;
   void FlipDraw() override;
+  bool InContext() const override;
 
   GLuint vertex_array_buffer_ = {};
 };

@@ -266,6 +266,11 @@ bool BlitFramebuffer::Resize(int32_t width, int32_t height,
   return texture_ != nullptr;
 }
 
-TextureFlipPtr &BlitFramebuffer::GetDraw() { return TextureFlip::Instance(); }
+TextureFlipPtr &BlitFramebuffer::GetDraw() {
+  if (!flip_) {
+    flip_ = TextureFlip::Instance();
+  }
+  return flip_;
+}
 
 }  // namespace egl

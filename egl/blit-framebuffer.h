@@ -31,6 +31,7 @@ class BlitFramebuffer {
   int32_t height_{};
   int32_t native_format_{};
   Texture2DPtr texture_{};
+  TextureFlipPtr flip_ = {};
 };
 
 using BlitFramebufferPtr = std::shared_ptr<BlitFramebuffer>;
