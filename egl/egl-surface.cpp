@@ -35,6 +35,14 @@ void SyncWait(int32_t fd) {
   }
 }
 
+bool VerticallyFlipNativeWindow(ANativeWindow *native_window) {
+  // ANativeWindow_setBuffersTransform(native_window,
+  // NATIVE_WINDOW_TRANSFORM_FLIP_V)
+  return (native_window->perform(native_window,
+                                 NATIVE_WINDOW_SET_BUFFERS_TRANSFORM,
+                                 NATIVE_WINDOW_TRANSFORM_FLIP_V) == 0);
+}
+
 }  // namespace
 
 namespace egl {
@@ -88,6 +96,11 @@ EGLSurface WindowSurface::CreateSurface(EGLConfig config,
                                         const EGLAttrib *attrib_list) {
   assert(native_window_);
 
+  if (!VerticallyFlipNativeWindow(native_window_)) {
+    // EGL_BAD_NATIVE_WINDOW
+    return EGL_NO_SURFACE;
+  }
+
   int32_t min_buffer_count = {};
   if (native_window_->query(native_window_,
                             NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS,
@@ -132,6 +145,7 @@ EGLSurface WindowSurface::CreateSurface(EGLConfig config,
 EGLBoolean WindowSurface::DestroySurface() {
   CancelBuffer();
   egl_surf_.reset();
+  VerticallyFlipNativeWindow(native_window_);
   return EGL_TRUE;
 }
 

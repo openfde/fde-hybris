@@ -252,36 +252,12 @@ void BlitFramebuffer::Blit(ANativeWindowBuffer *native_buffer) {
   }
   auto width = native_buffer->width;
   auto height = native_buffer->height;
-  auto native_format = native_buffer->format;
-  if (!Resize(width, height, native_format)) {
-    return;
-  }
   auto image =
       std::make_shared<AndroidBufferImage>(egl_dpy_, proxy_, native_buffer);
   if (auto egl_img = image->CreateImage(); egl_img != EGL_NO_IMAGE) {
-    CopyFromFramebuffer(texture_->EglImage(), width, height);
-    FrameBufferBinder draw_fb{GL_DRAW_FRAMEBUFFER, egl_img};
-    auto draw = GetDraw();
-    draw->Flip(texture_->Id());
+    CopyFromFramebuffer(egl_img, width, height);
     image->DestroyImage();
   }
-}
-
-bool BlitFramebuffer::Resize(int32_t width, int32_t height,
-                             int32_t native_format) {
-  if (width != width_ || height != height_ || native_format != native_format_) {
-    HalPixelFormat pixel_format{native_format};
-    texture_ = Texture2D::CreateTexture(pixel_format.TextureInternalFormat(),
-                                        width, height);
-  }
-  return texture_ != nullptr;
-}
-
-TextureFlipPtr &BlitFramebuffer::GetDraw() {
-  if (!flip_) {
-    flip_ = TextureFlip::Instance();
-  }
-  return flip_;
 }
 
 }  // namespace egl
