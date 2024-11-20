@@ -37,29 +37,6 @@ std::map<EGLint, EGLint> kAndroidSpecialAttributes{
     {EGL_NATIVE_VISUAL_TYPE, EGL_DONT_CARE},
 };
 
-// if success return not null, or point to mismatch attribute position.
-EGLint *CheckAndFilterSpecialAttributes(
-    EGLint *attributes, const std::map<EGLint, EGLint> &special_attribs) {
-  auto attrib_count = egl::misc::EglAttrbCount(attributes);
-  auto attrib_end = attributes + (attrib_count * 2 + 1);
-  constexpr int32_t kStep = 2;
-  for (auto pos = (attrib_count - 1) * kStep; pos >= 0; pos -= kStep) {
-    auto curr_attrib = attributes + pos;
-    if (auto it = special_attribs.find(*curr_attrib);
-        it != special_attribs.end()) {
-      auto value = *(curr_attrib + 1);
-      if (value != EGL_DONT_CARE && it->second != EGL_DONT_CARE &&
-          it->second != value) {
-        return curr_attrib;
-      }
-      // remove special attribs
-      std::move(curr_attrib + kStep, attrib_end, curr_attrib);
-      attrib_end -= kStep;
-    }
-  }
-  return nullptr;
-}
-
 const std::set<std::string> kExcludeForAndroidExtensions{
     "EGL_ANDROID_blob_cache",
     "EGL_ANDROID_get_native_client_buffer",
@@ -108,7 +85,7 @@ Display *DisplayManager::GetPlatformDisplay(EGLenum platform,
     if (auto it =
             FindDisplayPosByParameters(platform, native_display, attrib_list);
         it != displays_.end()) {
-      ALOGD("eglGetPlatformDisplay(0x%0xX) found display %p", platform,
+      ALOGD("eglGetPlatformDisplay(0x%04X) found display %p", platform,
             it->get());
       return it->get();
     }
@@ -495,7 +472,7 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
     }
   }
 
-  if (auto mismatch = CheckAndFilterSpecialAttributes(
+  if (auto mismatch = misc::CheckAndFilterSpecialAttributes(
           attribs.data(), kAndroidSpecialAttributes);
       mismatch) {
     auto supported_value = kAndroidSpecialAttributes.find(*mismatch)->second;
@@ -512,8 +489,8 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
         {EGL_BLUE_SIZE, pixel_format.BlueSize()},
         {EGL_ALPHA_SIZE, pixel_format.AlphaSize()},
     };
-    if (auto mismatch =
-            CheckAndFilterSpecialAttributes(attribs.data(), checked_attributes);
+    if (auto mismatch = misc::CheckAndFilterSpecialAttributes(
+            attribs.data(), checked_attributes);
         mismatch) {
       // EGL_BAD_MATCH
       return EGL_FALSE;
@@ -541,21 +518,9 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
   auto ret = api.eglChooseConfig(dpy, attribs.data(), configs, config_size,
                                  num_config);
   if (!ret) {
-    auto PrintAttibutes = [](const EGLint *attrib_list) -> std::string {
-      std::ostringstream oss;
-      oss.setf(std::ios::showbase | std::ios::uppercase);
-      if (attrib_list) {
-        for (auto attirbs = attrib_list; *attirbs != EGL_NONE; attirbs += 2) {
-          oss << std::hex << std::setw(4) << std::setfill('0') << attirbs[0]
-              << " = " << attirbs[1] << ", ";
-        }
-        oss << std::hex << std::setw(4) << std::setfill('0') << EGL_NONE;
-      }
-      return oss.str();
-    };
-
     ALOGD("eglChooseConfig %s from attributes : %s",
-          proxy_->StrLastError().c_str(), PrintAttibutes(attrib_list).c_str());
+          proxy_->StrLastError().c_str(),
+          misc::StringifyAttributes(attrib_list).c_str());
   }
   return ret;
 }

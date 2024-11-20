@@ -99,6 +99,18 @@ EGLSurface WindowSurface::CreateSurface(EGLConfig config,
     return EGL_NO_SURFACE;
   }
 
+  std::map<EGLAttrib, EGLAttrib> kAndroidSpecialAttributes{
+      {EGL_RENDER_BUFFER, EGL_DONT_CARE},
+  };
+
+  auto attributes = misc::DupAttributes(attrib_list);
+
+  if (misc::CheckAndFilterSpecialAttributes(attributes.data(),
+                                            kAndroidSpecialAttributes)) {
+    // EGL_BAD_ATTRIBUTE
+    return EGL_NO_SURFACE;
+  }
+
   int32_t min_buffer_count = {};
   if (native_window_->query(native_window_,
                             NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS,
@@ -130,12 +142,13 @@ EGLSurface WindowSurface::CreateSurface(EGLConfig config,
   auto width = native_buffer_->width;
   auto height = native_buffer_->height;
   created_state_ = std::make_shared<CreatedStateT>(
-      width, height, config, misc::DupAttributes(attrib_list));
+      width, height, config, misc::DupAttributes(attributes.data()));
 
   auto surf = CreateNewSurface(*created_state_);
   if (surf == EGL_NO_SURFACE) {
-    ALOGD("eglCreateWindowSurface display %p failed : %s", egl_dpy_,
-          proxy_->StrLastError().c_str());
+    ALOGD("eglCreateWindowSurface display %p failed : %s, attributes : %s",
+          egl_dpy_, proxy_->StrLastError().c_str(),
+          misc::StringifyAttributes(attrib_list).c_str());
   }
   return surf;
 }

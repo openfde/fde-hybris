@@ -3,6 +3,7 @@
 #include <EGL/egl.h>
 
 #include <cstdint>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -64,5 +65,15 @@ std::vector<EGLint> ConvertAttribToInt(const EGLAttrib *attrib_list);
 std::vector<EGLAttrib> ConvertIntToAttrib(const EGLint *attrib_list);
 
 std::string StringFourcc(uint32_t fourcc);
+
+std::string StringifyAttributes(const EGLAttrib *attrib_list);
+std::string StringifyAttributes(const EGLint *attrib_list);
+
+// if success return null, or point to mismatch attribute position.
+EGLint *CheckAndFilterSpecialAttributes(
+    EGLint *attributes, const std::map<EGLint, EGLint> &special_attribs);
+EGLAttrib *CheckAndFilterSpecialAttributes(
+    EGLAttrib *attributes,
+    const std::map<EGLAttrib, EGLAttrib> &special_attribs);
 
 }  // namespace egl::misc
