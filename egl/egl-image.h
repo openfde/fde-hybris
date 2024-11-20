@@ -2,7 +2,11 @@
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <GLES/gl.h>
+
+#ifndef GL_GLES_PROTOTYPES
+#define GL_GLES_PROTOTYPES 0
+#endif
+#include <GLES2/gl2.h>
 #include <system/window.h>
 
 #include <cstdint>

@@ -1,30 +1,55 @@
 #include "blit-framebuffer.h"
 
-#include <GLES/gl.h>
+#ifndef GL_GLES_PROTOTYPES
+#define GL_GLES_PROTOTYPES 0
+#endif
 #include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#include <GLES3/gl3.h>
 #include <log/log.h>
 
 #include <cstring>
 
-// #define GL_GLEXT_PROTOTYPES
-#include <GLES/glext.h>
-#include <GLES2/gl2ext.h>
-#include <GLES3/gl3.h>
-
 #include "pixel-format.h"
 
-namespace {
+#define HYBRIS_GET_SYMBOL_ADDRESS(symbol) \
+  ({ egl::EglProxy::Instance()->Api().eglGetProcAddress(#symbol); })
 
-void glEGLImageTargetTexture2DOES(GLenum target, GLeglImageOES image) {
-  static PFNGLEGLIMAGETARGETTEXTURE2DOESPROC EGLImageTargetTexture2DOES{};
-  if (!EGLImageTargetTexture2DOES) {
-    auto &proxy = egl::EglProxy::Instance();
-    EGLImageTargetTexture2DOES =
-        reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
-            proxy->Api().eglGetProcAddress("glEGLImageTargetTexture2DOES"));
-  }
-  return EGLImageTargetTexture2DOES(target, image);
+#define HYBRIS_VISIBILITY __attribute__((visibility("hidden")))
+#include "binding.h"
+
+extern "C" {
+HYBRIS_IMPLEMENT_FUNCTION2(void, glEGLImageTargetTexture2DOES, GLenum,
+                           GLeglImageOES);
+
+HYBRIS_IMPLEMENT_FUNCTION2(void, glGetIntegerv, GLenum, GLint *);
+
+HYBRIS_IMPLEMENT_FUNCTION2(void, glGenTextures, GLsizei, GLuint *);
+HYBRIS_IMPLEMENT_FUNCTION2(void, glDeleteTextures, GLsizei, const GLuint *);
+HYBRIS_IMPLEMENT_FUNCTION2(void, glBindTexture, GLenum, GLuint);
+
+HYBRIS_IMPLEMENT_FUNCTION8(void, glCopyTexSubImage2D, GLenum, GLint, GLint,
+                           GLint, GLint, GLint, GLsizei, GLsizei);
+
+HYBRIS_IMPLEMENT_FUNCTION9(void, glTexImage2D, GLenum, GLint, GLint, GLsizei,
+                           GLsizei, GLint, GLenum, GLenum, const void *);
+HYBRIS_IMPLEMENT_FUNCTION3(void, glTexParameteri, GLenum, GLenum, GLint);
+
+HYBRIS_IMPLEMENT_FUNCTION2(void, glGenFramebuffers, GLsizei, GLuint *);
+HYBRIS_IMPLEMENT_FUNCTION2(void, glDeleteFramebuffers, GLsizei, const GLuint *);
+HYBRIS_IMPLEMENT_FUNCTION2(void, glBindFramebuffer, GLenum, GLuint);
+
+HYBRIS_IMPLEMENT_FUNCTION5(void, glFramebufferTexture2D, GLenum, GLenum, GLenum,
+                           GLuint, GLint);
+HYBRIS_IMPLEMENT_FUNCTION1(GLenum, glCheckFramebufferStatus, GLenum);
+
+HYBRIS_IMPLEMENT_FUNCTION0(GLenum, glGetError);
+HYBRIS_IMPLEMENT_FUNCTION0(void, glFinish);
+
+HYBRIS_IMPLEMENT_FUNCTION4(void, glViewport, GLint, GLint, GLsizei, GLsizei);
 }
+
+namespace {
 
 class FrameBufferBinder {
  public:
@@ -51,10 +76,10 @@ class FrameBufferBinder {
 
     glGenFramebuffers(1, &fbo_);
     glBindFramebuffer(fb_target_, fbo_);
-    glFramebufferTexture2D(fb_target_, GL_COLOR_ATTACHMENT0_OES, GL_TEXTURE_2D,
+    glFramebufferTexture2D(fb_target_, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                            tex_, 0);
     if (auto status = glCheckFramebufferStatus(fb_target_);
-        status != GL_FRAMEBUFFER_COMPLETE_OES) {
+        status != GL_FRAMEBUFFER_COMPLETE) {
       ALOGE("glFramebufferTexture2D: FBO not complete: 0x%04X", status);
     }
   }
@@ -252,12 +277,27 @@ void BlitFramebuffer::Blit(ANativeWindowBuffer *native_buffer) {
   }
   auto width = native_buffer->width;
   auto height = native_buffer->height;
+
+  GLint vport[4] = {};
+  glGetIntegerv(GL_VIEWPORT, vport);
+  glViewport(0, 0, width, height);
+
   auto image =
       std::make_shared<AndroidBufferImage>(egl_dpy_, proxy_, native_buffer);
   if (auto egl_img = image->CreateImage(); egl_img != EGL_NO_IMAGE) {
     CopyFromFramebuffer(egl_img, width, height);
     image->DestroyImage();
   }
+
+  // Restore previous viewport.
+  glViewport(vport[0], vport[1], vport[2], vport[3]);
+
+  // clear GL errors, because its possible that the fbo format does not match
+  // the format of the read buffer, in the case of OpenGL ES 3.1 and integer
+  // RGBA formats.
+  glGetError();
+
+  glFinish();
 }
 
 }  // namespace egl

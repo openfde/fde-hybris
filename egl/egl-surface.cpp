@@ -1,6 +1,5 @@
 #include "egl-surface.h"
 
-#include <GLES/gl.h>
 #include <GLES2/gl2.h>
 #include <android/sync.h>
 #include <log/log.h>
@@ -9,7 +8,6 @@
 #include <vndk/window.h>
 
 #define GL_GLEXT_PROTOTYPES
-#include <GLES/glext.h>
 #include <GLES2/gl2ext.h>
 #include <GLES3/gl3.h>
 
@@ -188,19 +186,7 @@ EGLBoolean WindowSurface::SwapBuffers() {
 
   SyncWait(in_fence_fd_);
 
-  GLint vport[4] = {};
-  glGetIntegerv(GL_VIEWPORT, vport);
-  glViewport(0, 0, native_buffer_->width, native_buffer_->height);
   blit_->Blit(native_buffer_);
-  // Restore previous viewport.
-  glViewport(vport[0], vport[1], vport[2], vport[3]);
-
-  // clear GL errors, because its possible that the fbo format does not match
-  // the format of the read buffer, in the case of OpenGL ES 3.1 and integer
-  // RGBA formats.
-  glGetError();
-
-  glFinish();
 
   QueueBuffer();
   DequeueBuffer();
