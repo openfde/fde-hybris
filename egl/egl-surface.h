@@ -9,26 +9,27 @@
 #include <memory>
 #include <vector>
 
+#include "blit-framebuffer.h"
 #include "egl-proxy.h"
-#include "gbm.h"
 
 namespace egl {
 
 class Surface;
 using SurfacePtr = std::shared_ptr<Surface>;
 
-using GbmSurfacePtr = std::shared_ptr<gbm_surface>;
-
 class Surface {
  public:
-  Surface(EGLDisplay egl_dpy, EglProxy *proxy)
+  Surface(EGLDisplay egl_dpy, EglProxyPtr proxy)
       : egl_dpy_(egl_dpy), proxy_(proxy) {}
   virtual EGLSurface CreateSurface(EGLConfig config,
                                    const EGLAttrib *attrib_list) = 0;
   virtual EGLBoolean DestroySurface() = 0;
   virtual EGLBoolean QuerySurface(EGLint attribute, EGLint *value);
+  virtual EGLBoolean SurfaceAttrib(EGLint attribute, EGLint value);
 
   virtual EGLBoolean SwapBuffers();
+  virtual EGLBoolean SwapBuffersWithDamageKHR(const EGLint *rects,
+                                              EGLint n_rects);
 
   EGLSurface GetEglSurface() { return egl_surf_.get(); }
 
@@ -38,15 +39,13 @@ class Surface {
   void SetEglSurface(EGLSurface egl_surf);
 
   EGLDisplay egl_dpy_{};
-  EglProxy *proxy_{};
+  EglProxyPtr proxy_{};
   std::shared_ptr<void> egl_surf_{};
 };
 
 class WindowSurface : public Surface {
  public:
-  WindowSurface(EGLDisplay egl_dpy, EglProxy *proxy, ANativeWindow *window,
-                gbm_device *gbm)
-      : Surface(egl_dpy, proxy), native_window_(window), gbm_(gbm) {}
+  WindowSurface(EGLDisplay egl_dpy, EglProxyPtr proxy, ANativeWindow *window);
 
   ~WindowSurface();
 
@@ -54,8 +53,11 @@ class WindowSurface : public Surface {
                            const EGLAttrib *attrib_list) override;
   EGLBoolean DestroySurface() override;
   EGLBoolean QuerySurface(EGLint attribute, EGLint *value) override;
+  EGLBoolean SurfaceAttrib(EGLint attribute, EGLint value) override;
 
   EGLBoolean SwapBuffers() override;
+  EGLBoolean SwapBuffersWithDamageKHR(const EGLint *rects,
+                                      EGLint n_rects) override;
 
  private:
   struct CreatedStateT {
@@ -68,23 +70,27 @@ class WindowSurface : public Surface {
   };
   using CreateStatePtr = std::shared_ptr<CreatedStateT>;
 
+  EGLSurface CreateNewSurface(const CreatedStateT &created_state);
+
   void DequeueBuffer();
   void QueueBuffer();
   void CancelBuffer();
 
+  EGLBoolean MaybeResize();
+
  private:
   ANativeWindow *native_window_{};
   ANativeWindowBuffer *native_buffer_{};
-  gbm_device *gbm_{};
-  GbmSurfacePtr gbm_surf_;
   CreateStatePtr created_state_{};
+  BlitFramebufferPtr blit_{};
 
   int32_t in_fence_fd_ = -1;
+  EGLint swap_behavior_ = EGL_BUFFER_DESTROYED;
 };
 
 class PassthroughSurface : public Surface {
  public:
-  PassthroughSurface(EGLDisplay egl_dpy, EglProxy *proxy, void *window)
+  PassthroughSurface(EGLDisplay egl_dpy, EglProxyPtr proxy, void *window)
       : Surface(egl_dpy, proxy), native_window_(window) {}
 
   EGLSurface CreateSurface(EGLConfig config,

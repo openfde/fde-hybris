@@ -15,21 +15,16 @@
 #include "egl-image.h"
 #include "egl-proxy.h"
 #include "egl-surface.h"
-#include "gbm.h"
-
-extern "C" {
-struct gbm_device;
-}
 
 namespace egl {
 
 class Display;
 using DisplayPtr = std::shared_ptr<Display>;
 
-using GbmDevicePtr = std::shared_ptr<gbm_device>;
-
 class DisplayManager;
 using DisplayManagerPtr = std::shared_ptr<DisplayManager>;
+
+class HalPixelFormat;
 
 class DisplayManager {
  public:
@@ -54,7 +49,6 @@ class DisplayManager {
                                              void *native_display,
                                              const EGLAttrib *attrib_list);
 
-  GbmDevicePtr NewGbmDevice();
   DisplayIterator FindIdleSlot();
 
   std::array<DisplayPtr, kMaxDisplays> displays_{};
@@ -73,7 +67,7 @@ class Display {
   };
 
  public:
-  Display(EglProxy *proxy) : proxy_(proxy) {}
+  Display(EglProxyPtr proxy) : proxy_(std::move(proxy)) {}
   virtual ~Display();
 
   EGLDisplay GetEglDisplay() { return egl_dpy_.get(); }
@@ -91,6 +85,8 @@ class Display {
 
   Surface *CreatePlatformWindowSurfaceEXT(EGLConfig config, void *native_window,
                                           const EGLint *attrib_list);
+
+  EGLSurface CreatePbufferSurface(EGLConfig config, const EGLint *attrib_list);
 
   EGLBoolean DestroySurface(EGLSurface egl_surf);
 
@@ -124,7 +120,7 @@ class Display {
   const SurfacePtr &FindSurfaceByEgl(EGLSurface egl_surf);
 
   std::shared_ptr<void> egl_dpy_;
-  EglProxy *proxy_{};
+  EglProxyPtr proxy_{};
   std::string extensions_;
   std::vector<SurfacePtr> surfaces_;
   std::mutex mtx_;
@@ -135,8 +131,7 @@ class Display {
 
 class AndroidDisplay : public Display {
  public:
-  AndroidDisplay(EglProxy *proxy, GbmDevicePtr gbm)
-      : Display(proxy), gbm_(std::move(gbm)) {}
+  AndroidDisplay(EglProxyPtr proxy) : Display(std::move(proxy)) {}
 
   EGLDisplay GetPlatformDisplay(void *native_display,
                                 const EGLAttrib *attrib_list) override;
@@ -150,12 +145,13 @@ class AndroidDisplay : public Display {
                              EGLint *value) override;
 
  private:
-  GbmDevicePtr gbm_;
+  EGLBoolean GetFormatSizeFromConfig(EGLConfig config,
+                                     HalPixelFormat &pixel_format);
 };
 
 class GbmDisplay : public Display {
  public:
-  GbmDisplay(EglProxy *proxy) : Display(proxy) {}
+  GbmDisplay(EglProxyPtr proxy) : Display(proxy) {}
 
   EGLDisplay GetPlatformDisplay(void *native_display,
                                 const EGLAttrib *attrib_list) override;

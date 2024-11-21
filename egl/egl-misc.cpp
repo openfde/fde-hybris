@@ -4,10 +4,53 @@
 #include <system/graphics-base.h>
 
 #include <algorithm>
+#include <iomanip>
 #include <iterator>
 #include <sstream>
 
 #include "gbm.h"
+
+namespace {
+
+template <typename AttribType>
+std::string StringifyAttributes(const AttribType *attrib_list) {
+  std::ostringstream oss;
+  oss.setf(std::ios::uppercase);
+  if (attrib_list) {
+    for (auto attirbs = attrib_list; *attirbs != EGL_NONE; attirbs += 2) {
+      oss << "0x" << std::hex << std::setw(4) << std::setfill('0') << attirbs[0]
+          << " = 0x" << attirbs[1] << ", ";
+    }
+    oss << "0x" << std::hex << std::setw(4) << std::setfill('0') << EGL_NONE;
+  }
+  return oss.str();
+};
+
+template <typename AttribType>
+AttribType *CheckAndFilterSpecialAttributes(
+    AttribType *attributes,
+    const std::map<AttribType, AttribType> &special_attribs) {
+  auto attrib_count = egl::misc::EglAttrbCount(attributes);
+  auto attrib_end = attributes + (attrib_count * 2 + 1);
+  constexpr int32_t kStep = 2;
+  for (auto pos = (attrib_count - 1) * kStep; pos >= 0; pos -= kStep) {
+    auto curr_attrib = attributes + pos;
+    if (auto it = special_attribs.find(*curr_attrib);
+        it != special_attribs.end()) {
+      auto value = *(curr_attrib + 1);
+      if (value != EGL_DONT_CARE && it->second != EGL_DONT_CARE &&
+          it->second != value) {
+        return curr_attrib;
+      }
+      // remove special attribs
+      std::move(curr_attrib + kStep, attrib_end, curr_attrib);
+      attrib_end -= kStep;
+    }
+  }
+  return nullptr;
+}
+
+}  // namespace
 
 namespace egl::misc {
 
@@ -17,64 +60,6 @@ std::vector<std::string> SplitBySpace(std::string str) {
   std::copy(std::istream_iterator<std::string>(iss),
             std::istream_iterator<std::string>(), std::back_inserter(words));
   return words;
-}
-
-int32_t GetHalFromFromGbmFormat(int32_t gbm_format) {
-  switch (gbm_format) {
-    // case GBM_FORMAT_R8:
-    // case GBM_FORMAT_R16:
-    // case GBM_FORMAT_GR88:
-    // case GBM_FORMAT_GR1616:
-    // case GBM_FORMAT_ARGB1555:
-    case GBM_FORMAT_RGB565:
-    case GBM_FORMAT_BGR565:
-      return HAL_PIXEL_FORMAT_RGB_565;
-    case GBM_FORMAT_ARGB8888:
-      // return HAL_PIXEL_FORMAT_BGRA_8888;
-    case GBM_FORMAT_ABGR8888:
-      return HAL_PIXEL_FORMAT_RGBA_8888;
-    case GBM_FORMAT_XRGB8888:
-    case GBM_FORMAT_XBGR8888:
-      return HAL_PIXEL_FORMAT_RGBX_8888;
-    // case GBM_FORMAT_XBGR16161616:
-    case GBM_FORMAT_XBGR16161616F:
-    case GBM_FORMAT_ABGR16161616F:
-      return HAL_PIXEL_FORMAT_RGBA_FP16;
-    case GBM_FORMAT_XRGB2101010:
-    case GBM_FORMAT_ARGB2101010:
-    case GBM_FORMAT_XBGR2101010:
-    case GBM_FORMAT_ABGR2101010:
-      return HAL_PIXEL_FORMAT_RGBA_1010102;
-    default:
-      ALOGW("unsupported gbm buffer format %s",
-            StringFourcc(gbm_format).c_str());
-  }
-  return EGL_DONT_CARE;
-}
-
-int32_t GetGbmFormatFromHalFormat(int32_t hal_format) {
-  switch (hal_format) {
-    case HAL_PIXEL_FORMAT_RGB_565:
-      return GBM_FORMAT_RGB565;
-    case HAL_PIXEL_FORMAT_BGRA_8888:
-    case HAL_PIXEL_FORMAT_RGBA_8888:
-      return GBM_FORMAT_ARGB8888;
-    case HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED:
-      /*
-       * HACK: Hardcode this to RGBX_8888 as per cros_gralloc hack.
-       * TODO: Remove this once https://issuetracker.google.com/32077885 is
-       * fixed.
-       */
-    case HAL_PIXEL_FORMAT_RGBX_8888:
-      return GBM_FORMAT_XRGB8888;
-    case HAL_PIXEL_FORMAT_RGBA_FP16:
-      return GBM_FORMAT_ABGR16161616F;
-    case HAL_PIXEL_FORMAT_RGBA_1010102:
-      return GBM_FORMAT_ABGR2101010;
-    default:
-      break;
-  }
-  return EGL_DONT_CARE;
 }
 
 std::string SerializeExtensions(
@@ -107,6 +92,26 @@ std::string StringFourcc(uint32_t fourcc) {
   sprintf(str, "%c%c%c%c", (fourcc & 0x7f), ((fourcc >> 8) & 0x7f),
           ((fourcc >> 16) & 0x7f), ((fourcc >> 24) & 0x7f));
   return str;
+}
+
+std::string StringifyAttributes(const EGLAttrib *attrib_list) {
+  return ::StringifyAttributes<EGLAttrib>(attrib_list);
+}
+
+std::string StringifyAttributes(const EGLint *attrib_list) {
+  return ::StringifyAttributes<EGLint>(attrib_list);
+}
+
+EGLint *CheckAndFilterSpecialAttributes(
+    EGLint *attributes, const std::map<EGLint, EGLint> &special_attribs) {
+  return ::CheckAndFilterSpecialAttributes<EGLint>(attributes, special_attribs);
+}
+
+EGLAttrib *CheckAndFilterSpecialAttributes(
+    EGLAttrib *attributes,
+    const std::map<EGLAttrib, EGLAttrib> &special_attribs) {
+  return ::CheckAndFilterSpecialAttributes<EGLAttrib>(attributes,
+                                                      special_attribs);
 }
 
 }  // namespace egl::misc

@@ -4,7 +4,10 @@ filegroup {
 
     srcs: [
         "test-surface.cpp",
-        "misc/triangle.cpp"
+        "misc/triangle.cpp",
+        "gles3jni/gles3jni.cpp",
+        "gles3jni/RendererES2.cpp",
+        "gles3jni/RendererES3.cpp",
     ],
 }
 
@@ -19,10 +22,13 @@ cc_binary {
         "libgui",
         "libEGL",
         "libGLESv3",
+        "libnativewindow",
+        "liblog",
     ],
 
     local_include_dirs : [
         "misc",
+        "gles3jni",
     ],
     cflags : [
         "-g3",

@@ -18,6 +18,12 @@ set(LIBSRC
   egl-misc.cpp
   egl-misc.h
 
+  pixel-format.cpp
+  pixel-format.h
+
+  blit-framebuffer.cpp
+  blit-framebuffer.h
+
   libgbm.c
 )
 

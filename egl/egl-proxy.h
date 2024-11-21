@@ -70,7 +70,11 @@ struct Egl15 : public Egl14 {
   PFNEGLWAITSYNCPROC eglWaitSync = {};
 };
 
-struct EglApi : public Egl15 {};
+struct EglExteions {
+  PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC eglSwapBuffersWithDamageKHR = {};
+};
+
+struct EglApi : public Egl15, public EglExteions {};
 
 class EglProxy;
 
@@ -78,7 +82,7 @@ using EglProxyPtr = std::shared_ptr<EglProxy>;
 
 class EglProxy {
  public:
-  static EglProxy *Instance();
+  static EglProxyPtr &Instance();
 
   EglProxy(std::shared_ptr<void> handle) : handle_(std::move(handle)) {}
 
@@ -101,6 +105,7 @@ class EglProxy {
 
  private:
   void InitializeApi();
+  void InitializeApiExtensions();
   void ImplementEgl15Api();
 
   void ImplementByExtPlatorm();

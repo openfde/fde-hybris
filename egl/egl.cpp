@@ -21,7 +21,6 @@
 #include "egl-misc.h"
 #include "egl-proxy.h"
 #include "egl-surface.h"
-#include "gbm.h"
 #include "u_gralloc/u_gralloc.h"
 
 #define HYBRIS_GET_SYMBOL_ADDRESS(symbol) \
@@ -123,6 +122,12 @@ extern EGLBoolean eglDestroyImageKHR(EGLDisplay dpy, EGLImageKHR img);
 
 // EGL 1.4
 HYBRIS_IMPLEMENT_FUNCTION0(EGLContext, eglGetCurrentContext);
+
+// EGL_KHR_swap_buffers_with_damage extension requires EGL 1.4
+extern EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay dpy,
+                                              EGLSurface surface,
+                                              const EGLint *rects,
+                                              EGLint n_rects);
 
 // EGL_EXT_platform_base, EGL_MESA_platform_gbm, EGL_MESA_platform_surfaceless
 // extern EGLDisplay eglGetPlatformDisplayEXT(EGLenum platform,
@@ -247,10 +252,11 @@ HYBRIS_VISIBILITY EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLSurface draw,
 
 HYBRIS_VISIBILITY EGLSurface eglCreatePbufferSurface(
     EGLDisplay dpy, EGLConfig config, const EGLint *attrib_list) {
-  (void)dpy;
-  (void)config;
-  (void)attrib_list;
-  ALOGD("eglCreatePbufferSurface Not implement");
+  if (auto display = egl::DisplayManager::Instance()->FindDispay(dpy);
+      display) {
+    return display->CreatePbufferSurface(config, attrib_list);
+  }
+  ALOGD("eglCreatePbufferSurface display %p", dpy);
   return EGL_NO_SURFACE;
 }
 
@@ -337,7 +343,11 @@ eglGetProcAddress(const char *procname) {
   } else if (strcmp(procname, "eglDestroyImageKHR") == 0) {
     return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
         eglDestroyImageKHR);
+  } else if (strcmp(procname, "eglSwapBuffersWithDamageKHR") == 0) {
+    return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
+        eglSwapBuffersWithDamageKHR);
   }
+
   if (auto addr = api.eglGetProcAddress(procname); addr) {
     ALOGV("eglGetProcAddress %s=%p", procname, addr);
     return addr;
@@ -392,6 +402,17 @@ HYBRIS_VISIBILITY EGLBoolean eglSwapBuffers(EGLDisplay dpy,
   return api.eglSwapBuffers(dpy, EGL_NO_SURFACE);
 }
 
+HYBRIS_VISIBILITY
+EGLBoolean eglSwapBuffersWithDamageKHR(EGLDisplay dpy, EGLSurface surface,
+                                       const EGLint *rects, EGLint n_rects) {
+  if (auto egl_surface = reinterpret_cast<egl::Surface *>(surface);
+      egl_surface) {
+    return egl_surface->SwapBuffersWithDamageKHR(rects, n_rects);
+  }
+  auto const &api = egl::EglProxy::Instance()->Api();
+  return api.eglSwapBuffersWithDamageKHR(dpy, EGL_NO_SURFACE, rects, n_rects);
+}
+
 HYBRIS_VISIBILITY EGLBoolean eglTerminate(EGLDisplay dpy) {
   return egl::DisplayManager::Instance()->Terminate(dpy);
 }
@@ -419,12 +440,11 @@ HYBRIS_VISIBILITY EGLBoolean eglReleaseTexImage(EGLDisplay dpy,
 HYBRIS_VISIBILITY EGLBoolean eglSurfaceAttrib(EGLDisplay dpy,
                                               EGLSurface surface,
                                               EGLint attribute, EGLint value) {
-  auto const &api = egl::EglProxy::Instance()->Api();
   if (auto egl_surface = reinterpret_cast<egl::Surface *>(surface);
       egl_surface) {
-    surface = egl_surface->GetEglSurface();
+    return egl_surface->SurfaceAttrib(attribute, value);
   }
-  return api.eglSurfaceAttrib(dpy, surface, attribute, value);
+  return EGL_FALSE;
 }
 
 HYBRIS_VISIBILITY EGLSurface eglCreatePbufferFromClientBuffer(

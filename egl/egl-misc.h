@@ -3,6 +3,7 @@
 #include <EGL/egl.h>
 
 #include <cstdint>
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -10,8 +11,6 @@
 namespace egl::misc {
 
 std::vector<std::string> SplitBySpace(std::string str);
-int32_t GetHalFromFromGbmFormat(int32_t gbm_format);
-int32_t GetGbmFormatFromHalFormat(int32_t hal_format);
 
 std::string SerializeExtensions(
     const std::vector<std::string> &extensions,
@@ -30,11 +29,11 @@ OutputType *ConvertAttributes(const InputType *attrib_list,
       attrib_list += 2;
     }
   }
-  out_attribs.push_back(EGL_NONE);
-  if (attrib_list) {
-    return out_attribs.data();
+  if (out_attribs.empty()) {
+    return nullptr;
   }
-  return nullptr;
+  out_attribs.push_back(EGL_NONE);
+  return out_attribs.data();
 }
 
 template <typename OutputType, typename InputType>
@@ -66,5 +65,15 @@ std::vector<EGLint> ConvertAttribToInt(const EGLAttrib *attrib_list);
 std::vector<EGLAttrib> ConvertIntToAttrib(const EGLint *attrib_list);
 
 std::string StringFourcc(uint32_t fourcc);
+
+std::string StringifyAttributes(const EGLAttrib *attrib_list);
+std::string StringifyAttributes(const EGLint *attrib_list);
+
+// if success return null, or point to mismatch attribute position.
+EGLint *CheckAndFilterSpecialAttributes(
+    EGLint *attributes, const std::map<EGLint, EGLint> &special_attribs);
+EGLAttrib *CheckAndFilterSpecialAttributes(
+    EGLAttrib *attributes,
+    const std::map<EGLAttrib, EGLAttrib> &special_attribs);
 
 }  // namespace egl::misc

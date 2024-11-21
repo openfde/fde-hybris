@@ -16,10 +16,9 @@
 
 #include "egl-misc.h"
 #include "egl-proxy.h"
-#include "gbm.h"
+#include "pixel-format.h"
 
 namespace {
-constexpr char kGbmDevicePath[] = "/dev/dri/renderD128";
 
 std::map<EGLint, EGLint> kAndroidSpecialAttributes{
     // EGL_ANDROID_framebuffer_target
@@ -33,29 +32,10 @@ std::map<EGLint, EGLint> kAndroidSpecialAttributes{
     {EGL_DEPTH_ENCODING_NV, EGL_DEPTH_ENCODING_NONE_NV},
     // EGL_EXT_pixel_format_float
     {EGL_COLOR_COMPONENT_TYPE_EXT, EGL_COLOR_COMPONENT_TYPE_FIXED_EXT},
-};
 
-// if success return not null, or point to mismatch attribute position.
-EGLint *CheckAndFilterSpecialAttributes(
-    EGLint *attributes, const std::map<EGLint, EGLint> &special_attribs) {
-  auto attrib_count = egl::misc::EglAttrbCount(attributes);
-  auto attrib_end = attributes + (attrib_count * 2 + 1);
-  constexpr int32_t kStep = 2;
-  for (auto pos = (attrib_count - 1) * kStep; pos >= 0; pos -= kStep) {
-    auto curr_attrib = attributes + pos;
-    if (auto it = special_attribs.find(*curr_attrib);
-        it != special_attribs.end()) {
-      auto value = *(curr_attrib + 1);
-      if (value != EGL_DONT_CARE && it->second != value) {
-        return curr_attrib;
-      }
-      // remove special attribs
-      std::move(curr_attrib + kStep, attrib_end, curr_attrib);
-      attrib_end -= kStep;
-    }
-  }
-  return nullptr;
-}
+    {EGL_NATIVE_VISUAL_ID, EGL_DONT_CARE},
+    {EGL_NATIVE_VISUAL_TYPE, EGL_DONT_CARE},
+};
 
 const std::set<std::string> kExcludeForAndroidExtensions{
     "EGL_ANDROID_blob_cache",
@@ -86,7 +66,7 @@ DisplayManagerPtr &DisplayManager::Instance() {
 
 Display *DisplayManager::GetDisplay(EGLNativeDisplayType display_id) {
   if (display_id == EGL_DEFAULT_DISPLAY) {
-    return GetPlatformDisplay(EGL_PLATFORM_ANDROID_KHR, EGL_NO_DISPLAY,
+    return GetPlatformDisplay(EGL_PLATFORM_ANDROID_KHR, EGL_DEFAULT_DISPLAY,
                               nullptr);
   }
   ALOGD("eglGetDisplay failed: not support display id %p", display_id);
@@ -105,7 +85,7 @@ Display *DisplayManager::GetPlatformDisplay(EGLenum platform,
     if (auto it =
             FindDisplayPosByParameters(platform, native_display, attrib_list);
         it != displays_.end()) {
-      ALOGD("eglGetPlatformDisplay(0x%0xX) found display %p", platform,
+      ALOGD("eglGetPlatformDisplay(0x%04X) found display %p", platform,
             it->get());
       return it->get();
     }
@@ -113,11 +93,7 @@ Display *DisplayManager::GetPlatformDisplay(EGLenum platform,
 
   DisplayPtr display = {};
   if (platform == EGL_PLATFORM_ANDROID_KHR) {
-    if (auto gbm = NewGbmDevice(); gbm) {
-      display = std::make_shared<AndroidDisplay>(proxy, gbm);
-    } else {
-      ALOGD("eglGetPlatformDisplay failed: create gbm device");
-    }
+    display = std::make_shared<AndroidDisplay>(proxy);
   } else if (platform == EGL_PLATFORM_GBM_KHR) {
     display = std::make_shared<GbmDisplay>(proxy);
   } else {
@@ -185,15 +161,6 @@ DisplayManager::DisplayIterator DisplayManager::FindDisplayPosByParameters(
                       });
 }
 
-GbmDevicePtr DisplayManager::NewGbmDevice() {
-  if (auto fd = open(kGbmDevicePath, O_RDWR | O_CLOEXEC); fd >= 0) {
-    if (auto gbm = gbm_create_device(fd); gbm) {
-      return GbmDevicePtr{gbm, [](auto dev) { gbm_device_destroy(dev); }};
-    }
-  }
-  return nullptr;
-}
-
 DisplayManager::DisplayIterator DisplayManager::FindIdleSlot() {
   return std::find_if(displays_.begin(), displays_.end(),
                       [](auto &display) { return !display; });
@@ -255,6 +222,19 @@ Surface *Display::CreatePlatformWindowSurfaceEXT(EGLConfig config,
   return CreatePlatformWindowSurface(config, native_window, list);
 }
 
+EGLSurface Display::CreatePbufferSurface(EGLConfig config,
+                                         const EGLint *attrib_list) {
+  auto surface =
+      std::make_shared<PassthroughSurface>(GetEglDisplay(), proxy_, nullptr);
+  std::vector<EGLAttrib> attribs;
+  auto list = misc::ConvertAttributes(attrib_list, attribs);
+  if (auto egl_surf = surface->CreateSurface(config, list);
+      egl_surf != EGL_NO_SURFACE && AddSurface(surface)) {
+    return surface.get();
+  }
+  return EGL_NO_SURFACE;
+}
+
 void Display::SetParameters(EGLenum platform, void *native_display,
                             const EGLAttrib *attrib_list) {
   parameters_ = ParameterT{platform, native_display, attrib_list};
@@ -289,6 +269,8 @@ void Display::SetEglDisplay(EGLDisplay egl_dpy) {
   if (egl_dpy) {
     egl_dpy_ = std::shared_ptr<void>(egl_dpy, [this](EGLDisplay dpy) {
       if (proxy_) {
+        proxy_->Api().eglMakeCurrent(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE,
+                                     EGL_NO_CONTEXT);
         proxy_->Api().eglTerminate(dpy);
       }
     });
@@ -356,15 +338,18 @@ Image *Display::CreateImage(EGLContext ctx, EGLenum target,
   if (target == EGL_NATIVE_BUFFER_ANDROID) {
     // EGL_ANDROID_image_native_buffer
     auto native_buffer = reinterpret_cast<ANativeWindowBuffer *>(buffer);
-    image = std::make_shared<AndroidBufferImage>(dpy, proxy_, native_buffer);
+    image = std::make_shared<AndroidBufferImage>(dpy, proxy_, native_buffer,
+                                                 attrib_list);
   } else if (kGlImageTargets.find(target) != kGlImageTargets.end()) {
     auto name = static_cast<GLuint>(reinterpret_cast<uintptr_t>(buffer));
-    image = std::make_shared<GlBufferImage>(dpy, proxy_, target, name);
+    image = std::make_shared<GlBufferImage>(dpy, proxy_, target, name, ctx,
+                                            attrib_list);
   } else {
     // EGL_LINUX_DMA_BUF_EXT or EGL_WAYLAND_BUFFER_WL
-    image = std::make_shared<PassthroughImage>(dpy, proxy_, target, buffer);
+    image = std::make_shared<PassthroughImage>(dpy, proxy_, target, buffer, ctx,
+                                               attrib_list);
   }
-  if (auto egl_image = image->CreateImage(ctx, attrib_list); egl_image) {
+  if (auto egl_image = image->CreateImage(); egl_image) {
     image_manager_.AddImage(image);
     return image.get();
   }
@@ -437,12 +422,12 @@ EGLBoolean Display::GetConfigAttrib(EGLConfig config, EGLint attribute,
 EGLDisplay AndroidDisplay::GetPlatformDisplay(void *native_display,
                                               const EGLAttrib *attrib_list) {
   assert(proxy_);
-  assert(gbm_);
-  if (native_display || (attrib_list && attrib_list[0] != EGL_NONE)) {
+  if (native_display != EGL_DEFAULT_DISPLAY ||
+      (attrib_list && attrib_list[0] != EGL_NONE)) {
     return EGL_NO_DISPLAY;
   }
-  auto egl_dpy = proxy_->Api().eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR,
-                                                     gbm_.get(), nullptr);
+  auto egl_dpy = proxy_->Api().eglGetPlatformDisplay(
+      EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
   SetEglDisplay(egl_dpy);
   return egl_dpy;
 }
@@ -450,8 +435,8 @@ EGLDisplay AndroidDisplay::GetPlatformDisplay(void *native_display,
 Surface *AndroidDisplay::CreatePlatformWindowSurface(
     EGLConfig config, void *native_window, const EGLAttrib *attrib_list) {
   if (auto window = reinterpret_cast<ANativeWindow *>(native_window); window) {
-    auto surface = std::make_shared<WindowSurface>(GetEglDisplay(), proxy_,
-                                                   window, gbm_.get());
+    auto surface =
+        std::make_shared<WindowSurface>(GetEglDisplay(), proxy_, window);
     if (auto egl_surf = surface->CreateSurface(config, attrib_list);
         egl_surf != EGL_NO_SURFACE && AddSurface(surface)) {
       return surface.get();
@@ -471,7 +456,23 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
   }
   auto attribs = egl::misc::DupAttributes(attrib_list);
 
-  if (auto mismatch = CheckAndFilterSpecialAttributes(
+  EGLint native_visual_id = -1;
+  bool has_surface_type = false;
+  for (auto it = attribs.begin(); *it != EGL_NONE; it += 2) {
+    if (*it == EGL_SURFACE_TYPE) {
+      auto &type = *std::next(it);
+      if ((type & EGL_WINDOW_BIT) != 0) {
+        type &= ~EGL_WINDOW_BIT;
+        type &= ~EGL_SWAP_BEHAVIOR_PRESERVED_BIT;
+        type |= EGL_PBUFFER_BIT;
+        has_surface_type = true;
+      }
+    } else if (*it == EGL_NATIVE_VISUAL_ID) {
+      native_visual_id = *std::next(it);
+    }
+  }
+
+  if (auto mismatch = misc::CheckAndFilterSpecialAttributes(
           attribs.data(), kAndroidSpecialAttributes);
       mismatch) {
     auto supported_value = kAndroidSpecialAttributes.find(*mismatch)->second;
@@ -480,36 +481,46 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
     return EGL_FALSE;
   }
 
-  for (auto it = attribs.begin(); *it != EGL_NONE; it += 2) {
-    if (*it == EGL_SURFACE_TYPE) {
-      // auto &type = *std::next(it);
-      // type &= ~EGL_WINDOW_BIT;
-      // type |= EGL_PBUFFER_BIT;
-    } else if (*it == EGL_NATIVE_VISUAL_ID) {
-      *std::next(it) = egl::misc::GetGbmFormatFromHalFormat(*std::next(it));
-    } else if (*it == EGL_NATIVE_VISUAL_TYPE) {
-      *std::next(it) = EGL_DONT_CARE;
+  if (native_visual_id != -1) {
+    HalPixelFormat pixel_format{native_visual_id};
+    std::map<EGLint, EGLint> checked_attributes{
+        {EGL_RED_SIZE, pixel_format.RedSize()},
+        {EGL_GREEN_SIZE, pixel_format.GreenSize()},
+        {EGL_BLUE_SIZE, pixel_format.BlueSize()},
+        {EGL_ALPHA_SIZE, pixel_format.AlphaSize()},
+    };
+    if (auto mismatch = misc::CheckAndFilterSpecialAttributes(
+            attribs.data(), checked_attributes);
+        mismatch) {
+      // EGL_BAD_MATCH
+      return EGL_FALSE;
     }
+
+    std::vector<GLint> size_config{
+        EGL_RED_SIZE,   pixel_format.RedSize(),
+        EGL_GREEN_SIZE, pixel_format.GreenSize(),
+        EGL_BLUE_SIZE,  pixel_format.BlueSize(),
+        EGL_ALPHA_SIZE, pixel_format.AlphaSize(),
+    };
+    misc::ApendAttributes(attribs.data(), size_config);
+    std::swap(attribs, size_config);
+  }
+
+  if (!has_surface_type) {
+    const EGLint surface_config[] = {
+        EGL_SURFACE_TYPE,
+        EGL_PBUFFER_BIT,
+        EGL_NONE,
+    };
+    misc::ApendAttributes(surface_config, attribs);
   }
 
   auto ret = api.eglChooseConfig(dpy, attribs.data(), configs, config_size,
                                  num_config);
   if (!ret) {
-    auto PrintAttibutes = [](const EGLint *attrib_list) -> std::string {
-      std::ostringstream oss;
-      oss.setf(std::ios::showbase | std::ios::uppercase);
-      if (attrib_list) {
-        for (auto attirbs = attrib_list; *attirbs != EGL_NONE; attirbs += 2) {
-          oss << std::hex << std::setw(4) << std::setfill('0') << attirbs[0]
-              << " = " << attirbs[1] << ", ";
-        }
-        oss << std::hex << std::setw(4) << std::setfill('0') << EGL_NONE;
-      }
-      return oss.str();
-    };
-
     ALOGD("eglChooseConfig %s from attributes : %s",
-          proxy_->StrLastError().c_str(), PrintAttibutes(attrib_list).c_str());
+          proxy_->StrLastError().c_str(),
+          misc::StringifyAttributes(attrib_list).c_str());
   }
   return ret;
 }
@@ -517,13 +528,19 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
 EGLBoolean AndroidDisplay::GetConfigAttrib(EGLConfig config, EGLint attribute,
                                            EGLint *value) {
   auto const &api = egl::EglProxy::Instance()->Api();
-  if (attribute == EGL_NATIVE_VISUAL_TYPE) {
-    attribute = EGL_NATIVE_VISUAL_ID;
+  if (attribute == EGL_NATIVE_VISUAL_TYPE ||
+      attribute == EGL_NATIVE_VISUAL_ID) {
+    HalPixelFormat pixel_format;
+    if (!GetFormatSizeFromConfig(config, pixel_format)) {
+      // EGL_BAD_ATTRIBUTE
+      return EGL_FALSE;
+    }
+    *value = pixel_format.PixelFormat();
+    return EGL_TRUE;
+  } else if (attribute == EGL_SURFACE_TYPE) {
+    *value = EGL_WINDOW_BIT | EGL_PBUFFER_BIT;
   }
   if (auto ret = Display::GetConfigAttrib(config, attribute, value); ret) {
-    if (attribute == EGL_NATIVE_VISUAL_ID) {
-      *value = egl::misc::GetHalFromFromGbmFormat(*value);
-    }
     return EGL_TRUE;
   } else if (!ret && api.eglGetError() == EGL_BAD_ATTRIBUTE) {
     if (auto it = kAndroidSpecialAttributes.find(attribute);
@@ -534,6 +551,25 @@ EGLBoolean AndroidDisplay::GetConfigAttrib(EGLConfig config, EGLint attribute,
   }
   ALOGD("eglGetConfigAttrib failed from attribute : 0x%04X", attribute);
   return EGL_FALSE;
+}
+
+EGLBoolean AndroidDisplay::GetFormatSizeFromConfig(
+    EGLConfig config, HalPixelFormat &pixel_format) {
+  GLint red_size;
+  GLint green_size;
+  GLint blue_size;
+  GLint alpha_size;
+
+  if (!(Display::GetConfigAttrib(config, EGL_RED_SIZE, &red_size) &&
+        Display::GetConfigAttrib(config, EGL_GREEN_SIZE, &green_size) &&
+        Display::GetConfigAttrib(config, EGL_BLUE_SIZE, &blue_size) &&
+        Display::GetConfigAttrib(config, EGL_ALPHA_SIZE, &alpha_size))) {
+    return EGL_FALSE;
+  }
+  if (!pixel_format.BuildFormat(red_size, green_size, blue_size, alpha_size)) {
+    return EGL_FALSE;
+  }
+  return EGL_TRUE;
 }
 
 EGLDisplay GbmDisplay::GetPlatformDisplay(void *native_display,
