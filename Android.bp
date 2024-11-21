@@ -21,6 +21,7 @@ cc_library_shared {
         "include",
         "util",
     ],
+    compile_multilib: "64",
 }
 
 filegroup {
@@ -36,6 +37,7 @@ cc_library_shared {
     defaults: ["fde_hybris_defaults"],
     local_include_dirs : ["include"],
 
+    compile_multilib: "64",
     relative_install_path: "egl",
 
     srcs: [":glesv1_core_files"],
@@ -54,6 +56,7 @@ cc_library_shared {
     defaults: ["fde_hybris_defaults"],
     local_include_dirs : ["include"],
 
+    compile_multilib: "64",
     relative_install_path: "egl",
 
     srcs: [":glesv2_core_files"],
