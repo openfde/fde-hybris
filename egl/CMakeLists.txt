@@ -24,7 +24,6 @@ set(LIBSRC
   blit-framebuffer.cpp
   blit-framebuffer.h
 
-  libgbm.c
 )
 
 add_library(${LIBBASENAME} SHARED ${LIBSRC})

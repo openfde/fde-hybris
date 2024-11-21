@@ -32,5 +32,3 @@ add_subdirectory(glesv1)
 add_subdirectory(glesv2)
 add_subdirectory(util)
 
-add_subdirectory(applet)
-
