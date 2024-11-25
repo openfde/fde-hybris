@@ -1,81 +1,105 @@
 #pragma once
 
 #include <EGL/egl.h>
-#define EGL_EGLEXT_PROTOTYPES
 #include <EGL/eglext.h>
-#include <GLES/gl.h>
+#include <android/native_window.h>
+#include <system/window.h>
 
 #include <cassert>
-#include <system/window.h>
+#include <memory>
 #include <vector>
 
-class EglSurface {
-public:
-  explicit EglSurface(EGLDisplay display, EGLSurface real_surface)
-      : display_(display), real_surface_(real_surface) {}
-  explicit EglSurface(EGLDisplay display, EGLNativeWindowType window)
-      : display_(display), android_window_(window) {}
-  EGLSurface GetSurface() { return real_surface_; }
+#include "blit-framebuffer.h"
+#include "egl-proxy.h"
 
-  void SetReal(EGLSurface surface, EGLNativeWindowType window = {}) {
-    real_surface_ = surface;
-    real_window_ = window;
-  }
+namespace egl {
 
-  void SetConfigAndAttribs(EGLConfig config, std::vector<EGLint> attribs) {
-    config_ = config;
-    attribs_ = std::move(attribs);
-  }
+class Surface;
+using SurfacePtr = std::shared_ptr<Surface>;
 
-  uint32_t GetSurfaceWidth() const;
-  uint32_t GetSurfaceHeight() const;
+class Surface {
+ public:
+  Surface(EGLDisplay egl_dpy, EglProxyPtr proxy)
+      : egl_dpy_(egl_dpy), proxy_(proxy) {}
+  virtual EGLSurface CreateSurface(EGLConfig config,
+                                   const EGLAttrib *attrib_list) = 0;
+  virtual EGLBoolean DestroySurface() = 0;
+  virtual EGLBoolean QuerySurface(EGLint attribute, EGLint *value);
+  virtual EGLBoolean SurfaceAttrib(EGLint attribute, EGLint value);
 
-  uint32_t GetWindowWidth() const;
-  uint32_t GetWindowHeight() const;
-  uint32_t GetFormat() const;
-  uint64_t GetUsage() const;
+  virtual EGLBoolean SwapBuffers();
+  virtual EGLBoolean SwapBuffersWithDamageKHR(const EGLint *rects,
+                                              EGLint n_rects);
 
-  uint32_t GetNativeBufferWidth() const;
-  uint32_t GetNativeBufferHeight() const;
+  EGLSurface GetEglSurface() { return egl_surf_.get(); }
 
-  ANativeWindowBuffer *GetNativeBuffer() { return buffer_; }
+  virtual ~Surface() = default;
 
-  EGLConfig GetEglConfig() const { return config_; }
+ protected:
+  void SetEglSurface(EGLSurface egl_surf);
 
-  const EGLint *GetAttribs() const { return attribs_.data(); }
+  EGLDisplay egl_dpy_{};
+  EglProxyPtr proxy_{};
+  std::shared_ptr<void> egl_surf_{};
+};
+
+class WindowSurface : public Surface {
+ public:
+  WindowSurface(EGLDisplay egl_dpy, EglProxyPtr proxy, ANativeWindow *window);
+
+  ~WindowSurface();
+
+  EGLSurface CreateSurface(EGLConfig config,
+                           const EGLAttrib *attrib_list) override;
+  EGLBoolean DestroySurface() override;
+  EGLBoolean QuerySurface(EGLint attribute, EGLint *value) override;
+  EGLBoolean SurfaceAttrib(EGLint attribute, EGLint value) override;
+
+  EGLBoolean SwapBuffers() override;
+  EGLBoolean SwapBuffersWithDamageKHR(const EGLint *rects,
+                                      EGLint n_rects) override;
+
+ private:
+  struct CreatedStateT {
+    CreatedStateT(int32_t w, int32_t h, EGLConfig c, std::vector<EGLAttrib> a)
+        : width(w), height(h), config(c), attribs(std::move(a)) {}
+    int32_t width{};
+    int32_t height{};
+    EGLConfig config{};
+    std::vector<EGLAttrib> attribs;
+  };
+  using CreateStatePtr = std::shared_ptr<CreatedStateT>;
+
+  EGLSurface CreateNewSurface(const CreatedStateT &created_state);
 
   void DequeueBuffer();
   void QueueBuffer();
   void CancelBuffer();
 
-  void UpdateSurface();
+  EGLBoolean MaybeResize();
 
-  ANativeWindow *GetWindow() {
-    return reinterpret_cast<ANativeWindow *>(android_window_);
-  }
+ private:
+  ANativeWindow *native_window_{};
+  ANativeWindowBuffer *native_buffer_{};
+  CreateStatePtr created_state_{};
+  BlitFramebufferPtr blit_{};
 
-  ANativeWindow *GetWindow() const {
-    return reinterpret_cast<ANativeWindow *>(android_window_);
-  }
-
-  bool IsWindow() const { return android_window_ != nullptr; }
-
-  static void InsertSurface(EglSurface *surface);
-  static void RemoveSurface(EGLSurface surface);
-  static EglSurface *FindSurface(EGLSurface surface);
-
-  static EglSurface *From(EGLSurface surface) {
-    return reinterpret_cast<EglSurface *>(surface);
-  }
-
-private:
-  void UpdateSurfaceSize(uint32_t width, uint32_t height);
-
-  EGLDisplay display_ = {};
-  EGLSurface real_surface_ = EGL_NO_SURFACE;
-  EGLNativeWindowType real_window_ = {};
-  EGLNativeWindowType android_window_ = {};
-  EGLConfig config_ = {};
-  std::vector<EGLint> attribs_ = {};
-  ANativeWindowBuffer *buffer_ = {};
+  int32_t in_fence_fd_ = -1;
+  EGLint swap_behavior_ = EGL_BUFFER_DESTROYED;
 };
+
+class PassthroughSurface : public Surface {
+ public:
+  PassthroughSurface(EGLDisplay egl_dpy, EglProxyPtr proxy, void *window)
+      : Surface(egl_dpy, proxy), native_window_(window) {}
+
+  EGLSurface CreateSurface(EGLConfig config,
+                           const EGLAttrib *attrib_list) override;
+  EGLBoolean DestroySurface() override;
+  EGLBoolean QuerySurface(EGLint attribute, EGLint *value) override;
+
+ private:
+  void *native_window_{};
+};
+
+}  // namespace egl

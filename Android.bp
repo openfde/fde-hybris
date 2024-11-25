@@ -3,10 +3,14 @@ filegroup {
     name: "egl_core_files",
 
     srcs: [
-        "egl/display.cpp",
-        "egl/egl-surface.cpp",
         "egl/egl.cpp",
-        "egl/libgbm.c",
+        "egl/egl-surface.cpp",
+        "egl/egl-proxy.cpp",
+        "egl/egl-display.cpp",
+        "egl/egl-misc.cpp",
+        "egl/egl-image.cpp",
+        "egl/pixel-format.cpp",
+        "egl/blit-framebuffer.cpp",
     ],
 }
 
@@ -17,6 +21,7 @@ cc_library_shared {
         "include",
         "util",
     ],
+    compile_multilib: "64",
 }
 
 filegroup {
@@ -32,6 +37,7 @@ cc_library_shared {
     defaults: ["fde_hybris_defaults"],
     local_include_dirs : ["include"],
 
+    compile_multilib: "64",
     relative_install_path: "egl",
 
     srcs: [":glesv1_core_files"],
@@ -50,6 +56,7 @@ cc_library_shared {
     defaults: ["fde_hybris_defaults"],
     local_include_dirs : ["include"],
 
+    compile_multilib: "64",
     relative_install_path: "egl",
 
     srcs: [":glesv2_core_files"],
@@ -97,7 +104,6 @@ cc_defaults {
     srcs: [":egl_core_files"],
 
     header_libs: [
-//        "gl_headers",
         "libsystem_headers",
         "libnativebase_headers",
     ],
@@ -106,8 +112,6 @@ cc_defaults {
         "libcutils",
         "libnativewindow",
         "libhardware",
-        "libGLESv2_proxy",
-        "libGLESv1_CM_proxy",
     ],
 
     static_libs: [

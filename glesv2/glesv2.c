@@ -363,8 +363,6 @@ HYBRIS_IMPLEMENT_FUNCTION6(void, glTexStorage3D, GLenum, GLsizei, GLenum,
                            GLsizei, GLsizei, GLsizei);
 HYBRIS_IMPLEMENT_FUNCTION5(void, glGetInternalformativ, GLenum, GLenum, GLenum,
                            GLsizei, GLint *);
-HYBRIS_IMPLEMENT_FUNCTION2(void, glEGLImageTargetTexture2DOES, GLenum,
-                           GLeglImageOES);
 
 /* GLES 3.1 */
 

@@ -1,153 +1,324 @@
 #include "egl-surface.h"
 
-#include <android/native_window.h>
+#include <GLES2/gl2.h>
+#include <android/sync.h>
+#include <log/log.h>
+#include <system/window.h>
+#include <unistd.h>
 #include <vndk/window.h>
 
-#include <GLES2/gl2.h>
+#define GL_GLEXT_PROTOTYPES
+#include <GLES2/gl2ext.h>
+#include <GLES3/gl3.h>
 
 #include <cassert>
 #include <map>
 #include <mutex>
 
+#include "egl-image.h"
+#include "egl-misc.h"
+
 namespace {
 
-std::map<EGLSurface, EglSurface *> egl_surfaces;
-std::mutex surface_mtx{};
-
-} // namespace
-
-extern PFNEGLQUERYSURFACEPROC s_eglQuerySurface;
-extern PFNEGLCREATEPBUFFERSURFACEPROC s_eglCreatePbufferSurface;
-extern PFNEGLDESTROYSURFACEPROC s_eglDestroySurface;
-
-uint32_t EglSurface::GetSurfaceWidth() const {
-  GLint width = {};
-  if (auto ret = s_eglQuerySurface(display_, real_surface_, EGL_WIDTH, &width);
-      ret) {
-    return width;
-  }
-  return 0;
-}
-
-uint32_t EglSurface::GetSurfaceHeight() const {
-  GLint height = {};
-  if (auto ret =
-          s_eglQuerySurface(display_, real_surface_, EGL_HEIGHT, &height);
-      ret) {
-    return height;
-  }
-  return 0;
-}
-
-uint32_t EglSurface::GetWindowWidth() const {
-  if (auto window = GetWindow(); window) {
-    return ANativeWindow_getWidth(window);
-  }
-  return 0;
-}
-
-uint32_t EglSurface::GetWindowHeight() const {
-  if (auto window = GetWindow(); window) {
-    return ANativeWindow_getHeight(window);
-  }
-  return 0;
-}
-
-uint32_t EglSurface::GetFormat() const {
-  if (auto window = GetWindow(); window) {
-    return ANativeWindow_getFormat(window);
-  }
-  return 0;
-}
-
-uint64_t EglSurface::GetUsage() const { return 0; }
-
-uint32_t EglSurface::GetNativeBufferWidth() const {
-  if (buffer_) {
-    return buffer_->width;
-  }
-  return 0;
-}
-
-uint32_t EglSurface::GetNativeBufferHeight() const {
-  if (buffer_) {
-    return buffer_->height;
-  }
-  return 0;
-}
-
-void EglSurface::DequeueBuffer() {
-  assert(!buffer_);
-  if (auto window = GetWindow(); window) {
-    ANativeWindow_dequeueBuffer(window, &buffer_, nullptr);
+void CloseFenceFd(int32_t &fd) {
+  if (fd >= 0) {
+    close(fd);
+    fd = -1;
   }
 }
 
-void EglSurface::QueueBuffer() {
-  if (buffer_) {
-    assert(GetWindow());
-    auto window = GetWindow();
-
-    ANativeWindow_queueBuffer(window, buffer_, 0);
-    buffer_ = nullptr;
+void SyncWait(int32_t fd) {
+  if (fd >= 0) {
+    sync_wait(fd, -1);
   }
 }
 
-void EglSurface::CancelBuffer() {
-  if (GetWindow() && buffer_) {
-    auto window = GetWindow();
-    ANativeWindow_cancelBuffer(window, buffer_, 0);
-    buffer_ = nullptr;
+bool VerticallyFlipNativeWindow(ANativeWindow *native_window) {
+  // ANativeWindow_setBuffersTransform(native_window,
+  // NATIVE_WINDOW_TRANSFORM_FLIP_V)
+  return (native_window->perform(native_window,
+                                 NATIVE_WINDOW_SET_BUFFERS_TRANSFORM,
+                                 NATIVE_WINDOW_TRANSFORM_FLIP_V) == 0);
+}
+
+}  // namespace
+
+namespace egl {
+
+EGLBoolean Surface::QuerySurface(EGLint attribute, EGLint *value) {
+  return proxy_->Api().eglQuerySurface(egl_dpy_, egl_surf_.get(), attribute,
+                                       value);
+}
+
+EGLBoolean Surface::SurfaceAttrib(EGLint attribute, EGLint value) {
+  return proxy_->Api().eglSurfaceAttrib(egl_dpy_, egl_surf_.get(), attribute,
+                                        value);
+}
+
+EGLBoolean Surface::SwapBuffers() {
+  return proxy_->Api().eglSwapBuffers(egl_dpy_, egl_surf_.get());
+}
+
+EGLBoolean Surface::SwapBuffersWithDamageKHR(const EGLint *rects,
+                                             EGLint n_rects) {
+  return proxy_->Api().eglSwapBuffersWithDamageKHR(egl_dpy_, egl_surf_.get(),
+                                                   rects, n_rects);
+}
+
+void Surface::SetEglSurface(EGLSurface egl_surf) {
+  if (egl_surf != EGL_NO_SURFACE) {
+    egl_surf_ = std::shared_ptr<void>(egl_surf, [this](EGLSurface surf) {
+      proxy_->Api().eglDestroySurface(egl_dpy_, surf);
+    });
   }
 }
 
-extern PFNEGLCREATEPBUFFERSURFACEPROC s_eglCreatePbufferSurface;
-extern PFNEGLDESTROYSURFACEPROC s_eglDestroySurface;
-void EglSurface::UpdateSurface() {
-  assert(real_surface_);
-  auto width = GetWindowWidth();
-  auto height = GetWindowHeight();
-  if (GetSurfaceWidth() != width || GetSurfaceHeight() != height) {
-    s_eglDestroySurface(display_, real_surface_);
-    UpdateSurfaceSize(width, height);
-    real_surface_ =
-        s_eglCreatePbufferSurface(display_, config_, attribs_.data());
-    assert(real_surface_);
+WindowSurface::WindowSurface(EGLDisplay egl_dpy, EglProxyPtr proxy,
+                             ANativeWindow *window)
+    : Surface(egl_dpy, proxy), native_window_(window) {
+  if (native_window_ != nullptr) {
+    ANativeWindow_acquire(native_window_);
+  }
+  blit_ = std::make_shared<BlitFramebuffer>(proxy_, egl_dpy_);
+}
+
+WindowSurface::~WindowSurface() {
+  DestroySurface();
+  CloseFenceFd(in_fence_fd_);
+  if (native_window_ != nullptr) {
+    ANativeWindow_release(native_window_);
   }
 }
 
-void EglSurface::InsertSurface(EglSurface *surface) {
-  assert(surface);
-  assert(surface->GetSurface());
-  std::lock_guard<std::mutex> guard{surface_mtx};
-  egl_surfaces.emplace(surface->GetSurface(), surface);
+EGLSurface WindowSurface::CreateSurface(EGLConfig config,
+                                        const EGLAttrib *attrib_list) {
+  assert(native_window_);
+
+  if (!VerticallyFlipNativeWindow(native_window_)) {
+    // EGL_BAD_NATIVE_WINDOW
+    return EGL_NO_SURFACE;
+  }
+
+  std::map<EGLAttrib, EGLAttrib> kAndroidSpecialAttributes{
+      {EGL_RENDER_BUFFER, EGL_DONT_CARE},
+  };
+
+  auto attributes = misc::DupAttributes(attrib_list);
+
+  if (misc::CheckAndFilterSpecialAttributes(attributes.data(),
+                                            kAndroidSpecialAttributes)) {
+    // EGL_BAD_ATTRIBUTE
+    return EGL_NO_SURFACE;
+  }
+
+  int32_t min_buffer_count = {};
+  if (native_window_->query(native_window_,
+                            NATIVE_WINDOW_MIN_UNDEQUEUED_BUFFERS,
+                            &min_buffer_count)) {
+    // EGL_BAD_NATIVE_WINDOW
+    return EGL_NO_SURFACE;
+  }
+
+  int32_t max_buffer_count = {};
+  if (native_window_->query(native_window_, NATIVE_WINDOW_MAX_BUFFER_COUNT,
+                            &max_buffer_count)) {
+    // EGL_BAD_NATIVE_WINDOW
+    return EGL_NO_SURFACE;
+  }
+
+  constexpr int32_t kPpreferredBufferCount = 3;
+  // Clamp preferred between minimum (min undequeued + 1 dequeued) and maximum.
+  auto buffer_count =
+      std::max<int32_t>(kPpreferredBufferCount, min_buffer_count + 1);
+  buffer_count = std::min<int32_t>(buffer_count, max_buffer_count);
+
+  if (native_window_set_buffer_count(native_window_, buffer_count)) {
+    // EGL_BAD_NATIVE_WINDOW
+    return EGL_NO_SURFACE;
+  }
+
+  DequeueBuffer();
+
+  auto width = native_buffer_->width;
+  auto height = native_buffer_->height;
+  created_state_ = std::make_shared<CreatedStateT>(
+      width, height, config, misc::DupAttributes(attributes.data()));
+
+  auto surf = CreateNewSurface(*created_state_);
+  if (surf == EGL_NO_SURFACE) {
+    ALOGD("eglCreateWindowSurface display %p failed : %s, attributes : %s",
+          egl_dpy_, proxy_->StrLastError().c_str(),
+          misc::StringifyAttributes(attrib_list).c_str());
+  }
+  return surf;
 }
 
-void EglSurface::RemoveSurface(EGLSurface surface) {
-  if (surface != EGL_NO_SURFACE) {
-    std::lock_guard<std::mutex> guard{surface_mtx};
-    egl_surfaces.erase(surface);
-  }
+EGLBoolean WindowSurface::DestroySurface() {
+  CancelBuffer();
+  egl_surf_.reset();
+  VerticallyFlipNativeWindow(native_window_);
+  return EGL_TRUE;
 }
 
-EglSurface *EglSurface::FindSurface(EGLSurface surface) {
-  if (surface == EGL_NO_SURFACE) {
-    return nullptr;
+EGLBoolean WindowSurface::QuerySurface(EGLint attribute, EGLint *value) {
+  if (attribute == EGL_NATIVE_VISUAL_TYPE) {
+    attribute = EGL_NATIVE_VISUAL_ID;
   }
-  std::lock_guard<std::mutex> guard{surface_mtx};
-  if (auto it = egl_surfaces.find(surface); it != egl_surfaces.end()) {
-    return it->second;
+  if (attribute == EGL_SURFACE_TYPE) {
+    *value = EGL_WINDOW_BIT | EGL_PBUFFER_BIT;
+  } else if (attribute == EGL_NATIVE_VISUAL_ID) {
+    *value = ANativeWindow_getFormat(native_window_);
+  } else if (attribute == EGL_SWAP_BEHAVIOR) {
+    *value = swap_behavior_;
+  } else if (!Surface::QuerySurface(attribute, value)) {
+    ALOGD("eglQuerySurface display %p surface %p attribute 0x%04X failed : %s",
+          egl_dpy_, this, attribute, proxy_->StrLastError().c_str());
+    return EGL_FALSE;
   }
-  return nullptr;
+  return EGL_TRUE;
 }
 
-void EglSurface::UpdateSurfaceSize(uint32_t width, uint32_t height) {
-  assert(!attribs_.empty());
-  for (auto it = attribs_.begin(); *it != EGL_NONE; it += 2) {
-    if (*it == EGL_WIDTH) {
-      *std::next(it) = width;
-    } else if (*it == EGL_HEIGHT) {
-      *std::next(it) = height;
+EGLBoolean WindowSurface::SurfaceAttrib(EGLint attribute, EGLint value) {
+  if (attribute == EGL_SWAP_BEHAVIOR) {
+    if (value != EGL_BUFFER_PRESERVED && value != EGL_BUFFER_DESTROYED) {
+      // EGL_BAD_MATCH
+      return EGL_FALSE;
     }
+    swap_behavior_ = value;
+    return EGL_TRUE;
+  }
+  return Surface::SurfaceAttrib(attribute, value);
+}
+
+EGLBoolean WindowSurface::SwapBuffers() {
+  if (!Surface::SwapBuffers()) {
+    ALOGD("eglSwapBuffers display %p surface %p failed : %s", egl_dpy_,
+          egl_surf_.get(), proxy_->StrLastError().c_str());
+    return EGL_FALSE;
+  }
+
+  SyncWait(in_fence_fd_);
+
+  blit_->Blit(native_buffer_);
+
+  QueueBuffer();
+  DequeueBuffer();
+  return MaybeResize();
+}
+
+EGLBoolean WindowSurface::SwapBuffersWithDamageKHR(const EGLint *rects,
+                                                   EGLint n_rects) {
+  (void)rects;
+  (void)n_rects;
+  return SwapBuffers();
+}
+
+EGLSurface WindowSurface::CreateNewSurface(const CreatedStateT &created_state) {
+  auto width = created_state.width;
+  auto height = created_state.height;
+  auto config = created_state.config;
+  auto attrib_list = created_state.attribs.data();
+  std::vector<EGLint> pbuf_attribs = {EGL_WIDTH, width, EGL_HEIGHT, height};
+  auto attribs = misc::ApendAttributes(attrib_list, pbuf_attribs);
+  auto egl_surf =
+      proxy_->Api().eglCreatePbufferSurface(egl_dpy_, config, attribs);
+  if (egl_surf != EGL_NO_SURFACE) {
+    SetEglSurface(egl_surf);
+  }
+
+  return egl_surf;
+}
+
+void WindowSurface::DequeueBuffer() {
+  if (!native_buffer_) {
+    CloseFenceFd(in_fence_fd_);
+    ANativeWindow_dequeueBuffer(native_window_, &native_buffer_, &in_fence_fd_);
   }
 }
+
+void WindowSurface::QueueBuffer() {
+  if (native_buffer_) {
+    ANativeWindow_queueBuffer(native_window_, native_buffer_, -1);
+    native_buffer_ = nullptr;
+  }
+}
+
+void WindowSurface::CancelBuffer() {
+  if (native_window_ && native_buffer_) {
+    ANativeWindow_cancelBuffer(native_window_, native_buffer_, -1);
+    native_buffer_ = nullptr;
+  }
+}
+
+EGLBoolean WindowSurface::MaybeResize() {
+  if (!native_buffer_) {
+    return EGL_FALSE;
+  }
+  auto created_width = created_state_->width;
+  auto created_height = created_state_->height;
+  GLsizei width = native_buffer_->width;
+  GLsizei height = native_buffer_->height;
+  if (created_width == width && created_height == height) {
+    return EGL_TRUE;
+  }
+  created_state_->width = width;
+  created_state_->height = height;
+  ALOGD("Window resized : %dx%d -> %dx%d", created_width, created_height, width,
+        height);
+  auto &api = proxy_->Api();
+  auto prev_context = api.eglGetCurrentContext();
+  auto prev_read_surf = api.eglGetCurrentSurface(EGL_READ);
+  auto prev_draw_surf = api.eglGetCurrentSurface(EGL_DRAW);
+  auto prev_surf = egl_surf_.get();
+  bool need_rebind = (prev_surf && (prev_read_surf == prev_surf ||
+                                    prev_draw_surf == prev_surf));
+  if (need_rebind) {
+    api.eglMakeCurrent(egl_dpy_, EGL_NO_SURFACE, EGL_NO_SURFACE,
+                       EGL_NO_CONTEXT);
+  }
+  egl_surf_.reset();
+  auto egl_surf = CreateNewSurface(*created_state_);
+  if (need_rebind) {
+    auto read_surf = (prev_read_surf == prev_surf) ? egl_surf : prev_read_surf;
+    auto draw_surf = (prev_draw_surf == prev_surf) ? egl_surf : prev_draw_surf;
+    api.eglMakeCurrent(egl_dpy_, read_surf, draw_surf, prev_context);
+  }
+  return (egl_surf != EGL_NO_SURFACE);
+}
+
+EGLSurface PassthroughSurface::CreateSurface(EGLConfig config,
+                                             const EGLAttrib *attrib_list) {
+  EGLSurface egl_surf = EGL_NO_SURFACE;
+  auto &api = proxy_->Api();
+  if (native_window_ != nullptr) {
+    egl_surf = api.eglCreatePlatformWindowSurface(egl_dpy_, config,
+                                                  native_window_, attrib_list);
+  } else {
+    auto attribs = misc::ConvertAttribToInt(attrib_list);
+    egl_surf = api.eglCreatePbufferSurface(egl_dpy_, config, attribs.data());
+  }
+
+  if (egl_surf != EGL_NO_SURFACE) {
+    SetEglSurface(egl_surf);
+  }
+  return egl_surf;
+}
+
+EGLBoolean PassthroughSurface::DestroySurface() {
+  egl_surf_.reset();
+  return EGL_TRUE;
+}
+
+EGLBoolean PassthroughSurface::QuerySurface(EGLint attribute, EGLint *value) {
+  if (attribute == EGL_NATIVE_VISUAL_TYPE) {
+    attribute = EGL_NATIVE_VISUAL_ID;
+  }
+  if (Surface::QuerySurface(attribute, value)) {
+    return EGL_TRUE;
+  }
+  ALOGD("eglQuerySurface display %p surface %p attribute 0x%04X failed : %s",
+        egl_dpy_, this, attribute, proxy_->StrLastError().c_str());
+  return EGL_FALSE;
+}
+
+}  // namespace egl

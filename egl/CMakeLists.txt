@@ -2,13 +2,28 @@ set(LIBBASENAME EGL_proxy)
 
 set(LIBSRC
   egl.cpp
-  display.cpp
-  display.h
+  # display.cpp
+  # display.h
 
   egl-surface.cpp
   egl-surface.h
 
-  libgbm.c
+  egl-proxy.cpp
+  egl-proxy.h
+  egl-display.cpp
+  egl-display.h
+  egl-image.cpp
+  egl-image.h
+
+  egl-misc.cpp
+  egl-misc.h
+
+  pixel-format.cpp
+  pixel-format.h
+
+  blit-framebuffer.cpp
+  blit-framebuffer.h
+
 )
 
 add_library(${LIBBASENAME} SHARED ${LIBSRC})
@@ -20,6 +35,8 @@ set(ANDROID_INCLUDES
   ../../../frameworks/native/libs/nativebase/include
   ../../../system/core/include
   ../../../system/core/libsystem/include
+  ../../../system/core/libsync/include
+  ../../../system/core/libsync/
 )
 
 target_include_directories(${LIBBASENAME} AFTER PRIVATE ${ANDROID_INCLUDES})
