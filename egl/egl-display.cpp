@@ -426,8 +426,12 @@ EGLDisplay AndroidDisplay::GetPlatformDisplay(void *native_display,
       (attrib_list && attrib_list[0] != EGL_NONE)) {
     return EGL_NO_DISPLAY;
   }
-  auto egl_dpy = proxy_->Api().eglGetPlatformDisplay(
-      EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, nullptr);
+  EGLenum target = proxy_->HasSurfacelessExtension()
+                       ? EGL_PLATFORM_SURFACELESS_MESA
+                       : EGL_PLATFORM_GBM_KHR;
+
+  auto egl_dpy =
+      proxy_->Api().eglGetPlatformDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
   SetEglDisplay(egl_dpy);
   return egl_dpy;
 }

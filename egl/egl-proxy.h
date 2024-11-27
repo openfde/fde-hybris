@@ -97,6 +97,8 @@ class EglProxy {
     return client_extensions_.c_str();
   }
 
+  bool HasSurfacelessExtension() const { return has_surfaceless_; }
+
   EGLint EglError();
 
   static std::string StrError(EGLint errnum);
@@ -118,6 +120,7 @@ class EglProxy {
   int32_t minor_ = {};
 
   std::string client_extensions_;
+  bool has_surfaceless_ = false;
 };
 
 }  // namespace egl

@@ -176,26 +176,32 @@ bool EglProxy::Initialize() {
     return false;
   }
 
-  auto target = EGL_PLATFORM_GBM_KHR;
-  EGLDisplay egl_dpy = EGL_NO_DISPLAY;
-
   int32_t egl_major = kEglMajorVersion;
   int32_t egl_minor = 0;
-  if (ok_15 && api_.eglGetPlatformDisplay) {
-    egl_dpy = api_.eglGetPlatformDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
-    egl_minor = kEglMinorCurrentVersion;
-  } else if (ok_14 && api_.eglGetProcAddress) {
-    if (auto get_display_addr =
-            api_.eglGetProcAddress("eglGetPlatformDisplayEXT");
-        get_display_addr) {
-      auto GetDisplay =
-          reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(get_display_addr);
-      egl_dpy = GetDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
-      egl_minor = kEglMinorMinVersion;
+  auto GetDisplayEarly = [ok_14, ok_15, &egl_minor, this](EGLenum target) {
+    EGLDisplay egl_dpy = EGL_NO_DISPLAY;
+    if (ok_15 && api_.eglGetPlatformDisplay) {
+      egl_dpy =
+          api_.eglGetPlatformDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
+      egl_minor = kEglMinorCurrentVersion;
+    } else if (ok_14 && api_.eglGetProcAddress) {
+      if (auto get_display_addr =
+              api_.eglGetProcAddress("eglGetPlatformDisplayEXT");
+          get_display_addr) {
+        auto GetDisplay =
+            reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(get_display_addr);
+        egl_dpy = GetDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
+        egl_minor = kEglMinorMinVersion;
+      }
     }
-  }
+    return egl_dpy;
+  };
 
-  if (egl_dpy == EGL_NO_DISPLAY) {
+  auto egl_dpy = GetDisplayEarly(EGL_PLATFORM_SURFACELESS_MESA);
+  if (egl_dpy != EGL_NO_DISPLAY) {
+    has_surfaceless_ = true;
+  } else if (egl_dpy = GetDisplayEarly(EGL_PLATFORM_GBM_KHR);
+             egl_dpy == EGL_NO_DISPLAY) {
     ALOGE("eglGetPlatformDisplay failed %s", StrLastError().c_str());
     return false;
   }
