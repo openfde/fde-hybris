@@ -37,12 +37,14 @@ std::map<EGLint, EGLint> kAndroidSpecialAttributes{
     {EGL_NATIVE_VISUAL_TYPE, EGL_DONT_CARE},
 };
 
-const std::set<std::string> kExcludeForAndroidExtensions{
+const std::set<std::string> kExcludeExtensions{
     "EGL_ANDROID_blob_cache",
     "EGL_ANDROID_get_native_client_buffer",
     "EGL_ANDROID_create_native_client_buffer",
     "EGL_ANDROID_presentation_time",
     "EGL_ANDROID_get_frame_timestamps",
+
+    "EGL_KHR_partial_update",
 };
 
 }  // namespace
@@ -200,8 +202,8 @@ const char *Display::GetEglExtensions() {
 
       // EGL_KHR_fence_sync, EGL_KHR_image_base and EGL_KHR_gl_texture_2d_image
       // extensions
-      extensions_ = misc::SerializeExtensions(platform_extensions,
-                                              kExcludeForAndroidExtensions);
+      extensions_ =
+          misc::SerializeExtensions(platform_extensions, kExcludeExtensions);
     }
   }
   return !extensions_.empty() ? extensions_.c_str() : nullptr;
