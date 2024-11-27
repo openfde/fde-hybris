@@ -359,6 +359,9 @@ eglGetProcAddress(const char *procname) {
   } else if (strcmp(procname, "eglGetNativeClientBufferANDROID") == 0) {
     return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
         eglGetNativeClientBufferANDROID);
+  } else if (strcmp(procname, "eglQueryStringImplementationANDROID") == 0) {
+    return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
+        api.eglQueryString);
   }
   ALOGD("Not implement %s", procname);
 
