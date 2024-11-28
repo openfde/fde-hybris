@@ -8,6 +8,7 @@
 #include <set>
 #include <vector>
 
+#include "egl-display.h"
 #include "egl-misc.h"
 
 namespace {}  // namespace
@@ -57,35 +58,39 @@ EGLBoolean Image::DestroyImage() {
   return EGL_FALSE;
 }
 
-AndroidBufferImage::AndroidBufferImage(EGLDisplay egl_dpy, EglProxyPtr proxy,
+AndroidBufferImage::AndroidBufferImage(Display *dpy, EglProxyPtr proxy,
                                        ANativeWindowBuffer *buffer,
                                        const EGLAttrib *attrib_list)
-    : Image(egl_dpy, proxy) {
-  attribs_ = misc::DupAttributes(attrib_list);
-  if (buffer) {
-    auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(buffer);
-    AHardwareBuffer_acquire(hardware_buffer);
-    buffer_.reset(buffer, [](ANativeWindowBuffer *native_buffer) {
-      auto hardware_buffer =
-          ANativeWindowBuffer_getHardwareBuffer(native_buffer);
-      AHardwareBuffer_release(hardware_buffer);
-    });
+    : Image(dpy ? dpy->GetEglDisplay() : EGL_NO_DISPLAY, proxy), dpy_(dpy) {
+  if (!buffer) {
+    ALOGD("Not valid ANativeWindowBuffer, native buffer is null");
+    return;
   }
+  if (buffer->common.magic != ANDROID_NATIVE_BUFFER_MAGIC ||
+      buffer->common.version != sizeof(*buffer)) {
+    ALOGD("Not valid ANativeWindowBuffer: magic = 0x%04X, version = %d",
+          buffer->common.magic, buffer->common.magic);
+    return;
+  }
+
+  auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(buffer);
+  AHardwareBuffer_acquire(hardware_buffer);
+  buffer_.reset(buffer, [](ANativeWindowBuffer *native_buffer) {
+    auto hardware_buffer = ANativeWindowBuffer_getHardwareBuffer(native_buffer);
+    AHardwareBuffer_release(hardware_buffer);
+  });
+  attribs_ = misc::DupAttributes(attrib_list);
 }
 
 EGLImage AndroidBufferImage::CreateImage() {
   auto native_buffer = buffer_.get();
-  assert(native_buffer);
-  if (!native_buffer ||
-      native_buffer->common.magic != ANDROID_NATIVE_BUFFER_MAGIC ||
-      native_buffer->common.version != sizeof(*native_buffer)) {
+  if (!native_buffer) {
     // display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
-    if (native_buffer) {
-      ALOGD("Not valid ANativeWindowBuffer: magic = 0x%04X, version = %d",
-            native_buffer->common.magic, native_buffer->common.magic);
-    } else {
-      ALOGD("Not valid ANativeWindowBuffer, native buffer is null");
-    }
+    return EGL_NO_IMAGE;
+  }
+
+  if (!dpy_->HasExtension("EGL_EXT_image_dma_buf_import")) {
+    // // display::SetDisplayError(dpy, EGL_BAD_PARAMETER);
     return EGL_NO_IMAGE;
   }
 
@@ -144,69 +149,55 @@ EGLBoolean AndroidBufferImage::FillAttribs(
   attribs[atti++] = EGL_LINUX_DRM_FOURCC_EXT;
   attribs[atti++] = buffer_basic_info.drm_fourcc;
 
-  // egl mybe return bad attribute when uncomment below statements.
-  // attribs[atti++] = EGL_SAMPLE_RANGE_HINT_EXT;
-  // attribs[atti++] = buffer_color_info.sample_range;
-  // attribs[atti++] = EGL_YUV_COLOR_SPACE_HINT_EXT;
-  // attribs[atti++] = buffer_color_info.yuv_color_space;
-  // attribs[atti++] = EGL_YUV_CHROMA_HORIZONTAL_SITING_HINT_EXT;
-  // attribs[atti++] = buffer_color_info.horizontal_siting;
-  // attribs[atti++] = EGL_YUV_CHROMA_VERTICAL_SITING_HINT_EXT;
-  // attribs[atti++] = buffer_color_info.vertical_siting;
+  if (buffer_basic_info.num_planes > 1) {
+    // must be planar or semi-planar YUV format
+    attribs[atti++] = EGL_SAMPLE_RANGE_HINT_EXT;
+    attribs[atti++] = buffer_color_info.sample_range;
+    attribs[atti++] = EGL_YUV_COLOR_SPACE_HINT_EXT;
+    attribs[atti++] = buffer_color_info.yuv_color_space;
+    attribs[atti++] = EGL_YUV_CHROMA_HORIZONTAL_SITING_HINT_EXT;
+    attribs[atti++] = buffer_color_info.horizontal_siting;
+    attribs[atti++] = EGL_YUV_CHROMA_VERTICAL_SITING_HINT_EXT;
+    attribs[atti++] = buffer_color_info.vertical_siting;
+  }
+
+  auto has_dmabuf_modifier =
+      dpy_->HasExtension("EGL_EXT_image_dma_buf_import_modifiers");
 
   auto n_planes = buffer_basic_info.num_planes;
   auto fds = buffer_basic_info.fds;
   auto offsets = buffer_basic_info.offsets;
   auto strides = buffer_basic_info.strides;
   // some vendor egl library not support EGL_EXT_image_dma_buf_import_modifiers
-  // auto modifier = buffer_basic_info.modifier;
-  if (n_planes > 0) {
-    attribs[atti++] = EGL_DMA_BUF_PLANE0_FD_EXT;
-    attribs[atti++] = fds[0];
-    attribs[atti++] = EGL_DMA_BUF_PLANE0_OFFSET_EXT;
-    attribs[atti++] = offsets[0];
-    attribs[atti++] = EGL_DMA_BUF_PLANE0_PITCH_EXT;
-    attribs[atti++] = strides[0];
+  auto modifier = buffer_basic_info.modifier;
 
-    // attribs[atti++] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT;
-    // attribs[atti++] = modifier & 0xFFFFFFFF;
-    // attribs[atti++] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT;
-    // attribs[atti++] = modifier >> 32;
+#define FILL_PLANE(number)                                           \
+  if (n_planes > number) {                                           \
+    attribs[atti++] = EGL_DMA_BUF_PLANE##number##_FD_EXT;            \
+    attribs[atti++] = fds[number];                                   \
+    attribs[atti++] = EGL_DMA_BUF_PLANE##number##_OFFSET_EXT;        \
+    attribs[atti++] = offsets[number];                               \
+    attribs[atti++] = EGL_DMA_BUF_PLANE##number##_PITCH_EXT;         \
+    attribs[atti++] = strides[number];                               \
+    if (has_dmabuf_modifier) {                                       \
+      attribs[atti++] = EGL_DMA_BUF_PLANE##number##_MODIFIER_LO_EXT; \
+      attribs[atti++] = modifier & 0xFFFFFFFF;                       \
+      attribs[atti++] = EGL_DMA_BUF_PLANE##number##_MODIFIER_HI_EXT; \
+      attribs[atti++] = modifier >> 32;                              \
+    }                                                                \
   }
 
-  if (n_planes > 1) {
-    attribs[atti++] = EGL_DMA_BUF_PLANE1_FD_EXT;
-    attribs[atti++] = fds[1];
-    attribs[atti++] = EGL_DMA_BUF_PLANE1_OFFSET_EXT;
-    attribs[atti++] = offsets[1];
-    attribs[atti++] = EGL_DMA_BUF_PLANE1_PITCH_EXT;
-    attribs[atti++] = strides[1];
+  FILL_PLANE(0);
+  FILL_PLANE(1);
+  FILL_PLANE(2);
 
-    // attribs[atti++] = EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT;
-    // attribs[atti++] = modifier & 0xFFFFFFFF;
-    // attribs[atti++] = EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT;
-    // attribs[atti++] = modifier >> 32;
-  }
-
-  if (n_planes > 2) {
-    attribs[atti++] = EGL_DMA_BUF_PLANE2_FD_EXT;
-    attribs[atti++] = fds[2];
-    attribs[atti++] = EGL_DMA_BUF_PLANE2_OFFSET_EXT;
-    attribs[atti++] = offsets[2];
-    attribs[atti++] = EGL_DMA_BUF_PLANE2_PITCH_EXT;
-    attribs[atti++] = strides[2];
-
-    // attribs[atti++] = EGL_DMA_BUF_PLANE2_MODIFIER_LO_EXT;
-    // attribs[atti++] = modifier & 0xFFFFFFFF;
-    // attribs[atti++] = EGL_DMA_BUF_PLANE2_MODIFIER_HI_EXT;
-    // attribs[atti++] = modifier >> 32;
-  }
+#undef FILL_PLANE
 
   attribs[atti++] = EGL_NONE;
 
   assert(static_cast<size_t>(atti) <= attribs_size);
   return EGL_TRUE;
-}
+}  // namespace egl
 
 GlBufferImage::GlBufferImage(EGLDisplay egl_dpy, EglProxyPtr proxy,
                              EGLenum target, GLuint buffer, EGLContext ctx,

@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cassert>
 #include <iomanip>
+#include <iterator>
 #include <set>
 #include <sstream>
 
@@ -185,16 +186,17 @@ const char *Display::GetEglExtensions() {
   if (!inited_extensions_) {
     std::lock_guard<std::mutex> guard{mtx_};
     if (!inited_extensions_) {
-      inited_extensions_ = true;
       auto strs = proxy_->Api().eglQueryString(egl_dpy_.get(), EGL_EXTENSIONS);
       if (!strs) {
         return nullptr;
       }
       auto platform_extensions = misc::SplitBySpace(strs);
+
+      std::copy(platform_extensions.cbegin(), platform_extensions.cend(),
+                std::inserter(extensions_set_, extensions_set_.end()));
       // EGL_ANDROID_framebuffer_target ???
-      if (std::find(platform_extensions.cbegin(), platform_extensions.cend(),
-                    "EGL_EXT_image_dma_buf_import") !=
-          platform_extensions.cend()) {
+      if (extensions_set_.find("EGL_EXT_image_dma_buf_import") !=
+          extensions_set_.end()) {
         // not support EGL_ANDROID_create_native_client_buffer and
         // EGL_ANDROID_get_native_client_buffer
         platform_extensions.push_back(kNativeBufferExtensions);
@@ -204,9 +206,19 @@ const char *Display::GetEglExtensions() {
       // extensions
       extensions_ =
           misc::SerializeExtensions(platform_extensions, kExcludeExtensions);
+
+      inited_extensions_ = true;
     }
   }
   return !extensions_.empty() ? extensions_.c_str() : nullptr;
+}
+
+bool Display::HasExtension(const std::string &ext) {
+  if (!inited_extensions_) {
+    GetEglExtensions();
+  }
+  assert(inited_extensions_);
+  return extensions_set_.find(ext) != extensions_set_.end();
 }
 
 Surface *Display::CreateWindowSurface(EGLConfig config, EGLNativeWindowType win,
@@ -340,7 +352,7 @@ Image *Display::CreateImage(EGLContext ctx, EGLenum target,
   if (target == EGL_NATIVE_BUFFER_ANDROID) {
     // EGL_ANDROID_image_native_buffer
     auto native_buffer = reinterpret_cast<ANativeWindowBuffer *>(buffer);
-    image = std::make_shared<AndroidBufferImage>(dpy, proxy_, native_buffer,
+    image = std::make_shared<AndroidBufferImage>(this, proxy_, native_buffer,
                                                  attrib_list);
   } else if (kGlImageTargets.find(target) != kGlImageTargets.end()) {
     auto name = static_cast<GLuint>(reinterpret_cast<uintptr_t>(buffer));
@@ -441,8 +453,7 @@ EGLDisplay AndroidDisplay::GetPlatformDisplay(void *native_display,
 Surface *AndroidDisplay::CreatePlatformWindowSurface(
     EGLConfig config, void *native_window, const EGLAttrib *attrib_list) {
   if (auto window = reinterpret_cast<ANativeWindow *>(native_window); window) {
-    auto surface =
-        std::make_shared<WindowSurface>(GetEglDisplay(), proxy_, window);
+    auto surface = std::make_shared<WindowSurface>(this, proxy_, window);
     if (auto egl_surf = surface->CreateSurface(config, attrib_list);
         egl_surf != EGL_NO_SURFACE && AddSurface(surface)) {
       return surface.get();

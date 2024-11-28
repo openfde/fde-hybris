@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,7 @@ class Display {
   EGLDisplay GetEglDisplay() { return egl_dpy_.get(); }
 
   const char *GetEglExtensions();
+  bool HasExtension(const std::string &ext);
 
   virtual EGLDisplay GetPlatformDisplay(void *native_display,
                                         const EGLAttrib *attrib_list) = 0;
@@ -122,6 +124,7 @@ class Display {
   std::shared_ptr<void> egl_dpy_;
   EglProxyPtr proxy_{};
   std::string extensions_;
+  std::set<std::string> extensions_set_;
   std::vector<SurfacePtr> surfaces_;
   std::mutex mtx_;
   bool inited_extensions_ = false;

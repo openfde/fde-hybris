@@ -9,19 +9,21 @@
 
 namespace egl {
 
+class Display;
+
 class Texture2D;
 using Texture2DPtr = std::shared_ptr<Texture2D>;
 
 class BlitFramebuffer {
  public:
-  explicit BlitFramebuffer(EglProxyPtr proxy, EGLDisplay egl_dpy)
-      : proxy_(proxy), egl_dpy_(egl_dpy) {}
+  explicit BlitFramebuffer(EglProxyPtr proxy, Display *dpy)
+      : proxy_(proxy), dpy_(dpy) {}
 
   void Blit(ANativeWindowBuffer *native_buffer);
 
  private:
   EglProxyPtr proxy_{};
-  EGLDisplay egl_dpy_{};
+  Display *dpy_{};
 };
 
 using BlitFramebufferPtr = std::shared_ptr<BlitFramebuffer>;

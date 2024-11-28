@@ -10,6 +10,7 @@
 
 #include <cstring>
 
+#include "egl-display.h"
 #include "pixel-format.h"
 
 #define HYBRIS_GET_SYMBOL_ADDRESS(symbol) \
@@ -283,7 +284,7 @@ void BlitFramebuffer::Blit(ANativeWindowBuffer *native_buffer) {
   glViewport(0, 0, width, height);
 
   auto image =
-      std::make_shared<AndroidBufferImage>(egl_dpy_, proxy_, native_buffer);
+      std::make_shared<AndroidBufferImage>(dpy_, proxy_, native_buffer);
   if (auto egl_img = image->CreateImage(); egl_img != EGL_NO_IMAGE) {
     CopyFromFramebuffer(egl_img, width, height);
     image->DestroyImage();

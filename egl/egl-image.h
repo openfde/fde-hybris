@@ -29,6 +29,8 @@ struct u_gralloc;
 
 namespace egl {
 
+class Display;
+
 class Image;
 using ImagePtr = std::shared_ptr<Image>;
 using GrallocPtr = std::shared_ptr<u_gralloc>;
@@ -68,7 +70,7 @@ class Image {
 
 class AndroidBufferImage : public Image {
  public:
-  AndroidBufferImage(EGLDisplay egl_dpy, EglProxyPtr proxy,
+  AndroidBufferImage(Display *dpy, EglProxyPtr proxy,
                      ANativeWindowBuffer *buffer,
                      const EGLAttrib *attrib_list = nullptr);
 
@@ -80,6 +82,7 @@ class AndroidBufferImage : public Image {
   EGLBoolean FillAttribs(const ANativeWindowBuffer *native_buffer,
                          size_t attribs_size, EGLAttrib *attribs);
 
+  Display *dpy_ = {};
   std::shared_ptr<ANativeWindowBuffer> buffer_;
   std::vector<EGLAttrib> attribs_;
 };

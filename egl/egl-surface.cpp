@@ -15,6 +15,7 @@
 #include <map>
 #include <mutex>
 
+#include "egl-display.h"
 #include "egl-image.h"
 #include "egl-misc.h"
 
@@ -73,13 +74,15 @@ void Surface::SetEglSurface(EGLSurface egl_surf) {
   }
 }
 
-WindowSurface::WindowSurface(EGLDisplay egl_dpy, EglProxyPtr proxy,
+WindowSurface::WindowSurface(Display *dpy, EglProxyPtr proxy,
                              ANativeWindow *window)
-    : Surface(egl_dpy, proxy), native_window_(window) {
+    : Surface(dpy ? dpy->GetEglDisplay() : nullptr, proxy),
+      native_window_(window),
+      dpy_(dpy) {
   if (native_window_ != nullptr) {
     ANativeWindow_acquire(native_window_);
   }
-  blit_ = std::make_shared<BlitFramebuffer>(proxy_, egl_dpy_);
+  blit_ = std::make_shared<BlitFramebuffer>(proxy_, dpy_);
 }
 
 WindowSurface::~WindowSurface() {

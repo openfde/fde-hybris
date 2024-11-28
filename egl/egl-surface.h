@@ -14,6 +14,8 @@
 
 namespace egl {
 
+class Display;
+
 class Surface;
 using SurfacePtr = std::shared_ptr<Surface>;
 
@@ -45,7 +47,7 @@ class Surface {
 
 class WindowSurface : public Surface {
  public:
-  WindowSurface(EGLDisplay egl_dpy, EglProxyPtr proxy, ANativeWindow *window);
+  WindowSurface(Display *dpy, EglProxyPtr proxy, ANativeWindow *window);
 
   ~WindowSurface();
 
@@ -83,6 +85,7 @@ class WindowSurface : public Surface {
   ANativeWindowBuffer *native_buffer_{};
   CreateStatePtr created_state_{};
   BlitFramebufferPtr blit_{};
+  Display *dpy_ = {};
 
   int32_t in_fence_fd_ = -1;
   EGLint swap_behavior_ = EGL_BUFFER_DESTROYED;
