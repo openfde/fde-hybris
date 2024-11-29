@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <map>
 #include <set>
 #include <vector>
 
@@ -80,6 +81,12 @@ AndroidBufferImage::AndroidBufferImage(Display *dpy, EglProxyPtr proxy,
     AHardwareBuffer_release(hardware_buffer);
   });
   attribs_ = misc::DupAttributes(attrib_list);
+
+  // JM9100 not support EGL_IMAGE_PRESERVED_KHR attribute.
+  std::map<EGLAttrib, EGLAttrib> kExcludeAttributes{
+      {EGL_IMAGE_PRESERVED_KHR, EGL_DONT_CARE},
+  };
+  misc::CheckAndFilterSpecialAttributes(attribs_, kExcludeAttributes);
 }
 
 EGLImage AndroidBufferImage::CreateImage() {
@@ -103,8 +110,14 @@ EGLImage AndroidBufferImage::CreateImage() {
 
   attribs.resize(misc::EglAttrbCount(attribs.data()) * 2 + 1);
   misc::ApendAttributes(attribs_.data(), attribs);
-  egl_image_ = proxy_->Api().eglCreateImage(
-      egl_dpy_, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, nullptr, attribs.data());
+  if (egl_image_ = proxy_->Api().eglCreateImage(egl_dpy_, EGL_NO_CONTEXT,
+                                                EGL_LINUX_DMA_BUF_EXT, nullptr,
+                                                attribs.data());
+      egl_image_ == EGL_NO_IMAGE) {
+    auto str = misc::StringifyAttributes(attribs_.data());
+    ALOGE("eglCreateImage failed, attributs : %s",
+          str.empty() ? "NONE" : str.c_str());
+  }
 
   return egl_image_;
 }

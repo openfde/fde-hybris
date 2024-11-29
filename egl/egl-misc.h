@@ -75,5 +75,7 @@ EGLint *CheckAndFilterSpecialAttributes(
 EGLAttrib *CheckAndFilterSpecialAttributes(
     EGLAttrib *attributes,
     const std::map<EGLAttrib, EGLAttrib> &special_attribs);
-
+EGLAttrib *CheckAndFilterSpecialAttributes(
+    std::vector<EGLAttrib> &attributes,
+    const std::map<EGLAttrib, EGLAttrib> &special_attribs);
 }  // namespace egl::misc

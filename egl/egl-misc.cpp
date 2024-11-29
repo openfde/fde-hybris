@@ -114,4 +114,16 @@ EGLAttrib *CheckAndFilterSpecialAttributes(
                                                       special_attribs);
 }
 
+EGLAttrib *CheckAndFilterSpecialAttributes(
+    std::vector<EGLAttrib> &attributes,
+    const std::map<EGLAttrib, EGLAttrib> &special_attribs) {
+  auto filtered_attribs =
+      CheckAndFilterSpecialAttributes(attributes.data(), special_attribs);
+  if (filtered_attribs != nullptr) {
+    auto count = EglAttrbCount(filtered_attribs);
+    attributes.resize(count * 2 + 1);
+  }
+  return filtered_attribs;
+}
+
 }  // namespace egl::misc
