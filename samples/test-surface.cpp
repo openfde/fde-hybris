@@ -70,7 +70,7 @@ struct Color {
 
 using namespace android;
 
-int32_t main(int32_t argc, char *argv[]) {
+int32_t main(int32_t argc, char* argv[]) {
   int32_t repeat = 1000;
   if (argc > 1) {
     repeat = atoi(argv[1]);
@@ -283,6 +283,25 @@ int32_t main(int32_t argc, char *argv[]) {
     drawer->TerminalProgram();
     std::this_thread::sleep_for(std::chrono::microseconds(100));
 
+    sp<GraphicBuffer> outBuffer{};
+    sp<Fence> outFence{Fence::NO_FENCE};
+    float outTransformMatrix[16]{};
+    auto status =
+        surface->getLastQueuedBuffer(&outBuffer, &outFence, outTransformMatrix);
+    if (status == NO_ERROR && outBuffer &&
+        (!outFence || outFence->wait(Fence::TIMEOUT_NEVER) == NO_ERROR)) {
+      auto native_buffer = outBuffer->getNativeBuffer();
+      const EGLint attrs[] = {EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
+      if (auto image = eglCreateImageKHR(egl_dpy, EGL_NO_CONTEXT,
+                                         EGL_NATIVE_BUFFER_ANDROID,
+                                         (EGLClientBuffer)native_buffer, attrs);
+          image == EGL_NO_IMAGE) {
+        fprintf(stderr, "eglCreateImageKHR  : %s\n", StrLastError().c_str());
+      } else {
+        eglDestroyImageKHR(egl_dpy, image);
+      }
+    }
+
     gles3_render->render();
     if (!eglSwapBuffers(egl_dpy, egl_surface)) {
       fprintf(stderr, "eglSwapBuffers error : %s\n", StrLastError().c_str());
@@ -294,7 +313,7 @@ int32_t main(int32_t argc, char *argv[]) {
         {0.0, 0.0, 1.0, 1.0}, {1.0, 1.0, 1.0, 1.0}, {0.5, 0.0, 0.0, 0.5},
         {0.0, 0.5, 0.0, 0.5}, {0.0, 0.0, 0.5, 0.5}, {0.5, 0.5, 0.5, 0.5},
     };
-    for (auto const &color : colors) {
+    for (auto const& color : colors) {
       // glViewport(0, 0, width, height);
       glClearColor(color.red, color.green, color.blue, color.alpha);
       glClear(GL_COLOR_BUFFER_BIT);
