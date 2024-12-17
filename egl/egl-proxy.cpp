@@ -123,6 +123,92 @@ EGLDisplay GetPlatformDisplay(EGLenum platform, void *native_display,
   return EGL_NO_DISPLAY;
 }
 
+auto HasExtensions = [](const char *extensions,
+                        const std::vector<std::string> &exts) {
+  for (auto const &ext : exts) {
+    if (strstr(extensions, ext.c_str()) == nullptr) {
+      ALOGW("%s extension not found", ext.c_str());
+      return false;
+    }
+  }
+  return true;
+};
+
+auto HasExtension = [](const char *extensions, const char *ext) {
+  return (strstr(extensions, ext) != nullptr);
+};
+
+EGLDisplay GetDisplayEarly(const egl::EglApi &api, EGLenum target) {
+  EGLDisplay egl_dpy = EGL_NO_DISPLAY;
+  if (api.eglGetPlatformDisplay) {
+    egl_dpy = api.eglGetPlatformDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
+  } else if (api.eglGetProcAddress) {
+    auto native_client_extensions =
+        api.eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+    if (!native_client_extensions ||
+        !HasExtension(native_client_extensions, "EGL_EXT_platform_base")) {
+      return EGL_NO_DISPLAY;
+    }
+    if (auto get_display_addr =
+            api.eglGetProcAddress("eglGetPlatformDisplayEXT");
+        get_display_addr) {
+      auto GetDisplay =
+          reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(get_display_addr);
+      egl_dpy = GetDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
+    }
+  }
+  return egl_dpy;
+}
+
+std::shared_ptr<void> GetPlatformDisplayExt(
+    const egl::EglApi &api, EGLenum target,
+    const std::vector<std::string> &needed_extensions) {
+  auto egl_dpy = GetDisplayEarly(api, target);
+  if (egl_dpy == EGL_NO_DISPLAY) {
+    return nullptr;
+  }
+  auto terminate = api.eglTerminate;
+  std::shared_ptr<void> dpy{egl_dpy,
+                            [terminate](EGLDisplay d) { terminate(d); }};
+  if (!api.eglInitialize(egl_dpy, nullptr, nullptr)) {
+    return nullptr;
+  }
+  const EGLint neededAttribs[] = {
+      EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+      EGL_RED_SIZE,     1,
+      EGL_GREEN_SIZE,   1,
+      EGL_BLUE_SIZE,    1,
+      EGL_ALPHA_SIZE,   EGL_DONT_CARE,
+      EGL_NONE,
+  };
+  EGLConfig selected_config;
+  EGLint num_config = 0;
+  if (auto ret = api.eglChooseConfig(egl_dpy, neededAttribs, &selected_config,
+                                     1, &num_config);
+      !ret || num_config == 0) {
+    return nullptr;
+  }
+  auto display_extensions = api.eglQueryString(egl_dpy, EGL_EXTENSIONS);
+  if (display_extensions &&
+      HasExtensions(display_extensions, needed_extensions)) {
+    return dpy;
+  }
+  return nullptr;
+}
+
+std::shared_ptr<void> SelectPlatformDisplay(
+    const egl::EglApi &api, const std::vector<EGLenum> &platforms,
+    const std::vector<std::string> &needed_extensions,
+    EGLenum &selected_target) {
+  for (auto target : platforms) {
+    if (auto dpy = GetPlatformDisplayExt(api, target, needed_extensions); dpy) {
+      selected_target = target;
+      return dpy;
+    }
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 namespace egl {
@@ -133,89 +219,26 @@ bool EglProxy::Initialize() {
   InitializeApi();
   InitializeApiExtensions();
 
-  auto native_client_extensions =
-      api_.eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
-  if (!native_client_extensions) {
-    // not have EGL1.4 with EGL_EXT_client_extensions extension.
-    ALOGE("eglQueryString with EGL_NO_DISPLAY failed: %s",
-          StrLastError().c_str());
-    return false;
-  }
-
-  auto HasExtensions = [](const char *extensions,
-                          const std::vector<std::string> &exts) {
-    for (auto const &ext : exts) {
-      if (strstr(extensions, ext.c_str()) == nullptr) {
-        ALOGW("%s extension not found", ext.c_str());
-        return false;
-      }
-    }
-    return true;
-  };
-
-  const std::vector<std::string> kEgl14Extensions{
-      // "EGL_EXT_client_extensions",
-      // "EGL_KHR_client_get_all_proc_addresses",
-
-      "EGL_EXT_platform_base",
-      "EGL_MESA_platform_gbm",
-  };
-  auto ok_14 = HasExtensions(native_client_extensions, kEgl14Extensions);
-
-  const std::vector<std::string> kEgl15Extensions{
-      // "EGL_EXT_client_extensions",
-      // "EGL_KHR_get_all_proc_addresses",
-
-      "EGL_KHR_platform_gbm",
-  };
-  auto ok_15 = HasExtensions(native_client_extensions, kEgl15Extensions);
-  if (!ok_14 && !ok_15) {
-    ALOGE(
-        "The version of native EGL must be egl 1.4 with "
-        "EGL_MESA_platform_gbm or egl 1.5 with EGL_KHR_platform_gbm");
-    return false;
-  }
-
   int32_t egl_major = kEglMajorVersion;
   int32_t egl_minor = 0;
-  auto GetDisplayEarly = [ok_14, ok_15, &egl_minor, this](EGLenum target) {
-    EGLDisplay egl_dpy = EGL_NO_DISPLAY;
-    if (ok_15 && api_.eglGetPlatformDisplay) {
-      egl_dpy =
-          api_.eglGetPlatformDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
-      egl_minor = kEglMinorCurrentVersion;
-    } else if (ok_14 && api_.eglGetProcAddress) {
-      if (auto get_display_addr =
-              api_.eglGetProcAddress("eglGetPlatformDisplayEXT");
-          get_display_addr) {
-        auto GetDisplay =
-            reinterpret_cast<PFNEGLGETPLATFORMDISPLAYEXTPROC>(get_display_addr);
-        egl_dpy = GetDisplay(target, EGL_DEFAULT_DISPLAY, nullptr);
-        egl_minor = kEglMinorMinVersion;
-      }
-    }
-    return egl_dpy;
+
+  const std::vector<std::string> kExtensionsForDisplay{
+      "EGL_EXT_image_dma_buf_import",
+      // "EGL_EXT_image_dma_buf_import_modifiers",
   };
 
-  auto egl_dpy = GetDisplayEarly(EGL_PLATFORM_SURFACELESS_MESA);
-  if (egl_dpy != EGL_NO_DISPLAY) {
-    has_surfaceless_ = true;
-  } else if (egl_dpy = GetDisplayEarly(EGL_PLATFORM_GBM_KHR);
-             egl_dpy == EGL_NO_DISPLAY) {
-    ALOGE("eglGetPlatformDisplay failed %s", StrLastError().c_str());
+  std::vector<EGLenum> platforms{EGL_PLATFORM_SURFACELESS_MESA,
+                                 EGL_PLATFORM_GBM_KHR};
+  EGLenum target;
+  auto dpy =
+      SelectPlatformDisplay(api_, platforms, kExtensionsForDisplay, target);
+  if (!dpy) {
+    ALOGE("Can not select suitable platform display for android");
     return false;
   }
 
-  auto reclaim_dpy = std::shared_ptr<void>(egl_dpy, [this](EGLDisplay dpy) {
-    if (dpy != EGL_NO_DISPLAY) {
-      api_.eglTerminate(dpy);
-    }
-  });
-
-  if (!api_.eglInitialize(egl_dpy, nullptr, nullptr)) {
-    ALOGE("eglInitialize failed : %s", StrLastError().c_str());
-    return false;
-  }
+  auto egl_dpy = dpy.get();
+  has_surfaceless_ = (target == EGL_PLATFORM_SURFACELESS_MESA);
 
   auto apis = api_.eglQueryString(egl_dpy, EGL_CLIENT_APIS);
   if (!apis || strstr(apis, "OpenGL_ES") == nullptr) {
@@ -231,7 +254,6 @@ bool EglProxy::Initialize() {
         minor = std::stoi(version_str.substr(pos + 1));
       }
     };
-    egl_minor = 0;
     GetEglVersion(version, egl_major, egl_minor);
   }
 
@@ -240,16 +262,17 @@ bool EglProxy::Initialize() {
     return false;
   }
 
-  const std::vector<std::string> kExtensionsForDisplay{
-      "EGL_EXT_image_dma_buf_import",
-      // "EGL_EXT_image_dma_buf_import_modifiers",
-  };
-
-  bool ok_display = false;
-  if (auto display_extensions = api_.eglQueryString(egl_dpy, EGL_EXTENSIONS);
-      display_extensions) {
-    ok_display = HasExtensions(display_extensions, kExtensionsForDisplay);
-  }
+  auto native_client_extensions =
+      api_.eglQueryString(EGL_NO_DISPLAY, EGL_EXTENSIONS);
+  auto vendor = api_.eglQueryString(egl_dpy, EGL_VENDOR);
+  auto display_extensions = api_.eglQueryString(egl_dpy, EGL_EXTENSIONS);
+  ALOGD("EGL host vendor : %s, version : %d.%d, apis : %s", vendor, egl_major,
+        egl_minor, apis);
+  ALOGD("EGL host client extensions : %s",
+        native_client_extensions ? native_client_extensions : "NONE");
+  ALOGD("EGL host display extensions : %s",
+        display_extensions ? display_extensions : "NONE");
+  ALOGD("Select EGL host platform : 0x%04X", target);
 
   auto client_extensions = misc::SplitBySpace(native_client_extensions);
   client_extensions_ = misc::SerializeExtensions(client_extensions,
@@ -265,7 +288,7 @@ bool EglProxy::Initialize() {
 
   major_ = egl_major;
   minor_ = egl_minor;
-  return ok_display;
+  return true;
 }
 
 EglProxyPtr &EglProxy::Instance() {
