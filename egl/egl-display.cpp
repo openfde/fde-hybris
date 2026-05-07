@@ -478,11 +478,11 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
   for (auto it = attribs.begin(); *it != EGL_NONE; it += 2) {
     if (*it == EGL_SURFACE_TYPE) {
       auto &type = *std::next(it);
+      has_surface_type = true;
       if ((type & EGL_WINDOW_BIT) != 0) {
         type &= ~EGL_WINDOW_BIT;
         type &= ~EGL_SWAP_BEHAVIOR_PRESERVED_BIT;
         type |= EGL_PBUFFER_BIT;
-        has_surface_type = true;
       }
     } else if (*it == EGL_NATIVE_VISUAL_ID) {
       native_visual_id = *std::next(it);
