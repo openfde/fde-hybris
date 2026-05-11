@@ -56,33 +56,29 @@ HYBRIS_IMPLEMENT_FUNCTION10(void, glBlitFramebuffer, GLint, GLint, GLint, GLint,
 
 namespace {
 
-void CopyFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height,
-                         GLint fbo = 0) {
-  GLuint tmp_tex = {};
-  GLint curr_tex_bind = {};
-  GLint prev_read_fbo = {};
-  glGetIntegerv(GL_TEXTURE_BINDING_2D, &curr_tex_bind);
-  glGenTextures(1, &tmp_tex);
-  glBindTexture(GL_TEXTURE_2D, tmp_tex);
-  glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image);
-
-  // gles3
-  glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read_fbo);
-  if (prev_read_fbo != fbo) {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
-  }
-
-  glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
-
-  if (prev_read_fbo != fbo) {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev_read_fbo);
-  }
-
-  glBindTexture(GL_TEXTURE_2D, curr_tex_bind);
-  glDeleteTextures(1, &tmp_tex);
+const char* eglStrError(EGLint err)
+{
+    switch (err){
+        case EGL_SUCCESS:           return "EGL_SUCCESS";
+        case EGL_NOT_INITIALIZED:   return "EGL_NOT_INITIALIZED";
+        case EGL_BAD_ACCESS:        return "EGL_BAD_ACCESS";
+        case EGL_BAD_ALLOC:         return "EGL_BAD_ALLOC";
+        case EGL_BAD_ATTRIBUTE:     return "EGL_BAD_ATTRIBUTE";
+        case EGL_BAD_CONFIG:        return "EGL_BAD_CONFIG";
+        case EGL_BAD_CONTEXT:       return "EGL_BAD_CONTEXT";
+        case EGL_BAD_CURRENT_SURFACE: return "EGL_BAD_CURRENT_SURFACE";
+        case EGL_BAD_DISPLAY:       return "EGL_BAD_DISPLAY";
+        case EGL_BAD_MATCH:         return "EGL_BAD_MATCH";
+        case EGL_BAD_NATIVE_PIXMAP: return "EGL_BAD_NATIVE_PIXMAP";
+        case EGL_BAD_NATIVE_WINDOW: return "EGL_BAD_NATIVE_WINDOW";
+        case EGL_BAD_PARAMETER:     return "EGL_BAD_PARAMETER";
+        case EGL_BAD_SURFACE:       return "EGL_BAD_SURFACE";
+        case EGL_CONTEXT_LOST:      return "EGL_CONTEXT_LOST";
+        case 0x502:                 return "GL_INVALID_OPERATION";
+        default: return "UNKNOWN";
+    }
 }
-
-void FlipFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height,
+void CopyFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height, int32_t flip,
                          GLint fbo = 0) {
   GLuint tmp_tex = {};
   GLint curr_tex_bind = {};
@@ -91,10 +87,20 @@ void FlipFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height,
   glGenTextures(1, &tmp_tex);
   glBindTexture(GL_TEXTURE_2D, tmp_tex);
   glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image);
+  GLenum err = glGetError();
+  if (err != GL_NO_ERROR) {
+      ALOGE("glEGLImageTargetTexture2DOES fail %dx%d err:%s(0x%x)",
+        width, height, eglStrError(err), err);
+  }
 
   // 保存当前帧缓冲状态
   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read_fbo);
   glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prev_draw_fbo);
+
+  if (prev_read_fbo != fbo) {
+    // 绑定源帧缓冲（读缓冲）
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+  }
 
   // 创建临时帧缓冲，将纹理作为颜色附件
   GLuint temp_fbo;
@@ -102,21 +108,32 @@ void FlipFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height,
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, temp_fbo);
   glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                          GL_TEXTURE_2D, tmp_tex, 0);
-
-  // 绑定源帧缓冲（读缓冲）
-  if (prev_read_fbo != fbo) {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
+  err = glGetError();
+  if (err != GL_NO_ERROR) {
+      ALOGE("glFramebufferTexture2D fail %dx%d err:%s(0x%x)",
+        width, height, eglStrError(err), err);
   }
 
-  // 垂直翻转拷贝：源矩形 (0,0,width,height)，目标矩形 (0,height,width,0)
-  glBlitFramebuffer(0, 0, width, height,          // 源矩形（左下角原点）
-                    0, height, width, 0,          // 目标矩形（Y 轴翻转）
+  // glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+  if (flip) {
+    // 垂直翻转拷贝：源矩形 (0,0,width,height)，目标矩形 (0,height,width,0)
+    glBlitFramebuffer(0, 0, width, height,
+                    0, height, width, 0,
                     GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  } else {
+    glBlitFramebuffer(0, 0, width, height,
+                    0, 0, width, height,
+                    GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  }
+  err = glGetError();
+  if (err != GL_NO_ERROR) {
+      ALOGE("glBlitFramebuffer fail %dx%d err:%s(0x%x)",
+        width, height, eglStrError(err), err);
+  }
 
   glFinish();
-
-  // 恢复状态
   if (prev_read_fbo != fbo) {
+    // 恢复状态
     glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read_fbo);
   }
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_fbo);
@@ -215,11 +232,9 @@ void BlitFramebuffer::Blit(ANativeWindowBuffer *native_buffer) {
   auto image =
       std::make_shared<AndroidBufferImage>(dpy_, proxy_, native_buffer);
   if (auto egl_img = image->CreateImage(); egl_img != EGL_NO_IMAGE) {
-    if (native_buffer->usage & GRALLOC_USAGE_PRIVATE_1) {
-      FlipFromFramebuffer(egl_img, width, height);
-    } else {
-      CopyFromFramebuffer(egl_img, width, height);
-    }
+    int flip = (native_buffer->usage & GRALLOC_USAGE_PRIVATE_1);
+    CopyFromFramebuffer(egl_img, width, height, flip);
+
     image->DestroyImage();
   }
 
