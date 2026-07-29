@@ -139,6 +139,7 @@ cc_defaults {
         "-Wcast-qual",
         "-Wcast-align",
         "-Wno-unused-parameter",
+        "-DLOG_TAG=\"hybris\"",
     ],
 
     vendor: true,

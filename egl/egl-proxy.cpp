@@ -257,7 +257,7 @@ bool EglProxy::Initialize() {
     GetEglVersion(version, egl_major, egl_minor);
   }
 
-  if (egl_major != kEglMajorVersion || egl_minor < kEglMinorMinVersion) {
+  if (egl_major != kEglMajorVersion || egl_minor <= kEglMinorMinVersion) {
     ALOGE("EGL API version (%d.%d) is too low", egl_major, egl_minor);
     return false;
   }
