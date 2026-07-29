@@ -72,6 +72,8 @@ struct Egl15 : public Egl14 {
 
 struct EglExteions {
   PFNEGLSWAPBUFFERSWITHDAMAGEKHRPROC eglSwapBuffersWithDamageKHR = {};
+  PFNEGLQUERYDMABUFFORMATSEXTPROC eglQueryDmaBufFormatsEXT = {};
+  PFNEGLQUERYDMABUFMODIFIERSEXTPROC eglQueryDmaBufModifiersEXT = {};
 };
 
 struct EglApi : public Egl15, public EglExteions {};

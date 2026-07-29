@@ -171,6 +171,11 @@ HYBRIS_IMPLEMENT_FUNCTION4(EGLSurface, eglCreatePlatformPixmapSurface,
 
 HYBRIS_IMPLEMENT_FUNCTION3(EGLBoolean, eglWaitSync, EGLDisplay, EGLSync,
                            EGLint);
+
+extern EGLBoolean eglQueryDmaBufFormatsEXT(EGLDisplay dpy, EGLint max_formats, EGLint *formats, EGLint *num_formats);
+extern EGLBoolean eglQueryDmaBufModifiersEXT(EGLDisplay dpy, EGLint format, EGLint max_modifiers,
+                EGLuint64KHR *modifiers, EGLBoolean *external_only, EGLint *num_modifiers);
+
 }
 
 namespace {
@@ -346,6 +351,12 @@ eglGetProcAddress(const char *procname) {
   } else if (strcmp(procname, "eglSwapBuffersWithDamageKHR") == 0) {
     return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
         eglSwapBuffersWithDamageKHR);
+  } else if (strcmp(procname, "eglQueryDmaBufFormatsEXT") == 0) {
+    return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
+        eglQueryDmaBufFormatsEXT);
+  } else if (strcmp(procname, "eglQueryDmaBufModifiersEXT") == 0) {
+    return reinterpret_cast<__eglMustCastToProperFunctionPointerType>(
+        eglQueryDmaBufModifiersEXT);
   }
 
   if (auto addr = api.eglGetProcAddress(procname); addr) {
@@ -383,6 +394,23 @@ HYBRIS_VISIBILITY const char *eglQueryString(EGLDisplay dpy, EGLint name) {
     return nullptr;
   }
   return egl::EglProxy::Instance()->Api().eglQueryString(dpy, name);
+}
+
+HYBRIS_VISIBILITY EGLBoolean eglQueryDmaBufFormatsEXT(EGLDisplay dpy, EGLint max_formats, EGLint *formats, EGLint *num_formats) {
+  EGLBoolean ret = EGL_FALSE;
+  if (egl::EglProxy::Instance()->Api().eglQueryDmaBufFormatsEXT) {
+      ret = egl::EglProxy::Instance()->Api().eglQueryDmaBufFormatsEXT(dpy, max_formats, formats, num_formats);
+  }
+  return ret;
+}
+
+HYBRIS_VISIBILITY EGLBoolean eglQueryDmaBufModifiersEXT(EGLDisplay dpy, EGLint format, EGLint max_modifiers,
+                EGLuint64KHR *modifiers, EGLBoolean *external_only, EGLint *num_modifiers) {
+  EGLBoolean ret = EGL_FALSE;
+  if (egl::EglProxy::Instance()->Api().eglQueryDmaBufModifiersEXT) {
+      ret = egl::EglProxy::Instance()->Api().eglQueryDmaBufModifiersEXT(dpy, format, max_modifiers, modifiers, external_only, num_modifiers);
+  }
+  return ret;
 }
 
 HYBRIS_VISIBILITY EGLBoolean eglQuerySurface(EGLDisplay dpy, EGLSurface surface,

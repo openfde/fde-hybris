@@ -410,6 +410,8 @@ void EglProxy::InitializeApiExtensions() {
   } while (0)
 
   GETSYMBOLADDR(eglSwapBuffersWithDamageKHR);
+  GETSYMBOLADDR(eglQueryDmaBufFormatsEXT);
+  GETSYMBOLADDR(eglQueryDmaBufModifiersEXT);
 
 #undef GETSYMBOLADDR
 }

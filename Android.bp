@@ -147,6 +147,7 @@ cc_defaults {
         "-Wcast-align",
         "-Wno-unused-parameter",
         "-DLOG_TAG=\"hybris\"",
+        "-DEGL_EGLEXT_PROTOTYPES",
     ],
 
     vendor: true,
