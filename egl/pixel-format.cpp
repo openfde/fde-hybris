@@ -6,6 +6,7 @@
 #include <GLES3/gl3.h>
 #include <GLES3/gl3ext.h>
 #include <system/graphics-base.h>
+#include <log/log.h>
 
 namespace {
 
@@ -81,6 +82,12 @@ bool HalPixelFormat::BuildFormat(int32_t red_size, int32_t green_size,
   } else if ((red_size == 10) && (green_size == 10) && (blue_size == 10) &&
              (alpha_size == 2)) {
     format = HAL_PIXEL_FORMAT_RGBA_1010102;
+  } else if ((red_size == 10) && (green_size == 10) && (blue_size == 10) &&
+             (alpha_size == 0)) {
+    format = HAL_PIXEL_FORMAT_RGBX_8888;
+    red_size = 8;
+    green_size = 8;
+    blue_size = 8;
     // } else if ((red_size == 5) && (green_size == 5) && (blue_size == 5) &&
     //            (alpha_size == 1)) {
     //   format = HAL_PIXEL_FORMAT_RGBA_5551;
@@ -88,6 +95,8 @@ bool HalPixelFormat::BuildFormat(int32_t red_size, int32_t green_size,
     //            (alpha_size == 4)) {
     //   format = HAL_PIXEL_FORMAT_RGBA_4444;
   } else {
+    ALOGD("BuildFormat failed: R:%d, G:%d, B:%d, A:%d",
+        red_size, green_size, blue_size, alpha_size);
     return false;
   }
 

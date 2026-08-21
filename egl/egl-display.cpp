@@ -474,7 +474,9 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
   auto attribs = egl::misc::DupAttributes(attrib_list);
 
   EGLint native_visual_id = -1;
+  EGLint red_size=0, green_size=0, blue_size=0, alpha_size=0;
   bool has_surface_type = false;
+  bool has_alpha_type = false;
   for (auto it = attribs.begin(); *it != EGL_NONE; it += 2) {
     if (*it == EGL_SURFACE_TYPE) {
       auto &type = *std::next(it);
@@ -486,6 +488,15 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
       }
     } else if (*it == EGL_NATIVE_VISUAL_ID) {
       native_visual_id = *std::next(it);
+    } else if (*it == EGL_RED_SIZE) {
+      red_size = *std::next(it);
+    } else if (*it == EGL_GREEN_SIZE) {
+      green_size = *std::next(it);
+    } else if (*it == EGL_BLUE_SIZE) {
+      blue_size = *std::next(it);
+    } else if (*it == EGL_ALPHA_SIZE) {
+      alpha_size = *std::next(it);
+      has_alpha_type = true;
     }
   }
 
@@ -532,6 +543,20 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
     misc::ApendAttributes(surface_config, attribs);
   }
 
+  if (!has_alpha_type && red_size > 0 && green_size > 0 && blue_size > 0) {
+    if (green_size == 10) {
+      alpha_size = 2;
+    } else if (green_size == 8) {
+      alpha_size = 8;
+    }
+    const EGLint alpha_config[] = {
+        EGL_ALPHA_SIZE,
+        alpha_size,
+        EGL_NONE,
+    };
+    misc::ApendAttributes(alpha_config, attribs);
+  }
+
   auto ret = api.eglChooseConfig(dpy, attribs.data(), configs, config_size,
                                  num_config);
   if (!ret) {
@@ -539,6 +564,7 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
           proxy_->StrLastError().c_str(),
           misc::StringifyAttributes(attrib_list).c_str());
   }
+
   return ret;
 }
 
@@ -550,6 +576,7 @@ EGLBoolean AndroidDisplay::GetConfigAttrib(EGLConfig config, EGLint attribute,
     HalPixelFormat pixel_format;
     if (!GetFormatSizeFromConfig(config, pixel_format)) {
       // EGL_BAD_ATTRIBUTE
+      ALOGD("eglGetConfigAttrib failed from attribute : 0x%04X", attribute);
       return EGL_FALSE;
     }
     *value = pixel_format.PixelFormat();
