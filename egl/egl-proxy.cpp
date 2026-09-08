@@ -124,10 +124,11 @@ EGLDisplay GetPlatformDisplay(EGLenum platform, void *native_display,
 }
 
 auto HasExtensions = [](const char *extensions,
-                        const std::vector<std::string> &exts) {
+                        const std::vector<std::string> &exts,
+                        EGLenum target) {
   for (auto const &ext : exts) {
     if (strstr(extensions, ext.c_str()) == nullptr) {
-      ALOGW("%s extension not found", ext.c_str());
+      ALOGW("target(0x%X) : %s extension not found", target, ext.c_str());
       return false;
     }
   }
@@ -186,13 +187,17 @@ std::shared_ptr<void> GetPlatformDisplayExt(
   if (auto ret = api.eglChooseConfig(egl_dpy, neededAttribs, &selected_config,
                                      1, &num_config);
       !ret || num_config == 0) {
+    ALOGE("target(0x%X) : eglChooseConfig fail, ret:%d, num_config:%d",
+      target, ret, num_config);
     return nullptr;
   }
   auto display_extensions = api.eglQueryString(egl_dpy, EGL_EXTENSIONS);
   if (display_extensions &&
-      HasExtensions(display_extensions, needed_extensions)) {
+      HasExtensions(display_extensions, needed_extensions, target)) {
     return dpy;
   }
+  ALOGE("target(0x%X) : GetPlatformDisplayExt fail, extensions no found:%s",
+    target, display_extensions);
   return nullptr;
 }
 
@@ -272,7 +277,7 @@ bool EglProxy::Initialize() {
         native_client_extensions ? native_client_extensions : "NONE");
   ALOGD("EGL host display extensions : %s",
         display_extensions ? display_extensions : "NONE");
-  ALOGD("Select EGL host platform : 0x%04X", target);
+  ALOGD("Select EGL host platform : 0x%04X, surfaceless : %d", target, has_surfaceless_);
 
   auto client_extensions = misc::SplitBySpace(native_client_extensions);
   client_extensions_ = misc::SerializeExtensions(client_extensions,

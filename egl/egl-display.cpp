@@ -83,6 +83,7 @@ Display *DisplayManager::GetPlatformDisplay(EGLenum platform,
   if (!proxy) {
     return nullptr;
   }
+  if (proxy->HasSurfacelessExtension())
   {
     std::lock_guard<std::mutex> lock{mtx_};
     if (auto it =
@@ -159,6 +160,7 @@ DisplayManager::DisplayIterator DisplayManager::FindDisplayPosByParameters(
   return std::find_if(displays_.begin(), displays_.end(),
                       [platform, native_display, attrib_list](auto &display) {
                         return display &&
+                               display->GetEglDisplay() != nullptr &&
                                display->SameAs(platform, native_display,
                                                attrib_list);
                       });
@@ -559,7 +561,7 @@ EGLBoolean AndroidDisplay::ChooseConfig(const EGLint *attrib_list,
 
   auto ret = api.eglChooseConfig(dpy, attribs.data(), configs, config_size,
                                  num_config);
-  if (!ret) {
+  if (!ret || num_config == 0) {
     ALOGD("eglChooseConfig %s from attributes : %s",
           proxy_->StrLastError().c_str(),
           misc::StringifyAttributes(attrib_list).c_str());
