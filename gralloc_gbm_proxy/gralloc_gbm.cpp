@@ -136,9 +136,6 @@ static uint32_t get_gbm_format(int format)
 			fmt = GBM_FORMAT_ARGB8888;
 		break;
 	case HAL_PIXEL_FORMAT_YV12:
-		/* YV12 is planar, but must be a single buffer so ask for RGB565 */
-		fmt = GBM_FORMAT_RGB565;
-		break;
 	case HAL_PIXEL_FORMAT_YCbCr_420_888:
 		/* YV12 is planar, but must be a single buffer so ask for RGB565 */
 		fmt = GBM_FORMAT_RGB565;
@@ -292,7 +289,6 @@ static struct gbm_bo *gbm_alloc(struct gbm_device *gbm,
 	int usage = get_pipe_bind(handle->usage);
 	int width, height;
 
-	handle->convert_format = 0;
 	width = handle->width;
 	height = handle->height;
 	if (usage & GBM_BO_USE_CURSOR) {
@@ -307,14 +303,7 @@ static struct gbm_bo *gbm_alloc(struct gbm_device *gbm,
 	 * 16bpp. Then increase the height by 1.5 for the U and V planes.
 	 */
 	if (handle->format == HAL_PIXEL_FORMAT_YV12 || handle->format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
-		if (width != GRALLOC_ALIGN(width, align_x * 2)) {
-			width = GRALLOC_ALIGN(width/2, align_x);
-			if (format == GBM_FORMAT_RGB565) {
-				handle->convert_format = 1;
-			}
-		} else {
-			width /= 2;
-		}
+		width = GRALLOC_ALIGN(width/2, align_x);
 		height += handle->height / 2;
 	}
 
@@ -605,7 +594,7 @@ int gralloc_gbm_bo_lock_ycbcr(buffer_handle_t handle,
 
 	switch (hnd->format) {
 	case HAL_PIXEL_FORMAT_YCrCb_420_SP:
-		ystride = cstride = GRALLOC_ALIGN(hnd->width, 16);
+		ystride = cstride = hnd->stride;
 		ycbcr->y = addr;
 		ycbcr->cr = (unsigned char *)addr + ystride * hnd->height;
 		ycbcr->cb = (unsigned char *)addr + ystride * hnd->height + 1;
@@ -614,7 +603,7 @@ int gralloc_gbm_bo_lock_ycbcr(buffer_handle_t handle,
 		ycbcr->chroma_step = 2;
 		break;
 	case HAL_PIXEL_FORMAT_YCbCr_420_888:
-		ystride = cstride = GRALLOC_ALIGN(hnd->width, 16);
+		ystride = cstride = hnd->stride;
 		ycbcr->y = addr;
 		ycbcr->cb = (unsigned char *)addr + ystride * hnd->height;
 		ycbcr->cr = (unsigned char *)addr + ystride * hnd->height + 1;
@@ -623,8 +612,8 @@ int gralloc_gbm_bo_lock_ycbcr(buffer_handle_t handle,
 		ycbcr->chroma_step = 2;
 		break;
 	case HAL_PIXEL_FORMAT_YV12:
-		ystride = hnd->width;
-		cstride = GRALLOC_ALIGN(ystride / 2, 16);
+		ystride = hnd->stride;
+		cstride = hnd->stride / 2;
 		ycbcr->y = addr;
 		ycbcr->cr = (unsigned char *)addr + ystride * hnd->height;
 		ycbcr->cb = (unsigned char *)addr + ystride * hnd->height + cstride * hnd->height / 2;
@@ -638,10 +627,4 @@ int gralloc_gbm_bo_lock_ycbcr(buffer_handle_t handle,
 	}
 
 	return 0;
-}
-
-int gralloc_gbm_need_convert_format(buffer_handle_t _handle)
-{
-	struct gralloc_handle_t *handle = gralloc_handle(_handle);
-	return handle->convert_format;
 }
