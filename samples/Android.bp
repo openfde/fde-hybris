@@ -35,3 +35,27 @@ cc_binary {
         "-O0",
     ],
 }
+
+cc_binary {
+    name: "egl-test",
+    srcs: ["egl-test.cpp"],
+    shared_libs : [
+        "libcutils",
+        "libutils",
+        "libui",
+        "libgui",
+        "libEGL",
+        "libGLESv3",
+        "libnativewindow",
+        "liblog",
+    ],
+
+    local_include_dirs : [
+        "misc",
+        "gles3jni",
+    ],
+    cflags : [
+        "-g3",
+        "-O0",
+    ],
+}

@@ -108,10 +108,17 @@ cc_defaults {
         "libnativebase_headers",
     ],
 
+    include_dirs: [
+        "frameworks/native/libs/nativewindow/include-private/private",
+    ],
+
     shared_libs: [
         "libcutils",
         "libnativewindow",
         "libhardware",
+        "libui",
+        "libutils",
+        "libutilscallstack",
     ],
 
     static_libs: [
@@ -139,6 +146,8 @@ cc_defaults {
         "-Wcast-qual",
         "-Wcast-align",
         "-Wno-unused-parameter",
+        "-DLOG_TAG=\"hybris\"",
+        "-DEGL_EGLEXT_PROTOTYPES",
     ],
 
     vendor: true,
@@ -148,4 +157,26 @@ cc_defaults {
         "liblog",
         "libdl",
     ],
+}
+
+cc_library_shared {
+    name: "gralloc.gbm_proxy",
+    srcs: [
+        "gralloc_gbm_proxy/gralloc_gbm.cpp",
+        "gralloc_gbm_proxy/gralloc.cpp",
+        "gralloc_gbm_proxy/gbm.cpp",
+        "gralloc_gbm_proxy/gbm_proxy.cpp",
+    ],
+
+    vendor: true,
+
+    shared_libs: [
+        "libdrm",
+        "liblog",
+        "libcutils",
+        "libhardware",
+    ],
+    export_include_dirs: ["."],
+    relative_install_path: "hw",
+    proprietary: true,
 }

@@ -165,13 +165,13 @@ EGLBoolean AndroidBufferImage::FillAttribs(
   if (buffer_basic_info.num_planes > 1) {
     // must be planar or semi-planar YUV format
     attribs[atti++] = EGL_SAMPLE_RANGE_HINT_EXT;
-    attribs[atti++] = buffer_color_info.sample_range;
+    attribs[atti++] = buffer_color_info.sample_range > 0 ? buffer_color_info.sample_range : __DRI_YUV_NARROW_RANGE;
     attribs[atti++] = EGL_YUV_COLOR_SPACE_HINT_EXT;
-    attribs[atti++] = buffer_color_info.yuv_color_space;
+    attribs[atti++] = buffer_color_info.yuv_color_space > 0 ? buffer_color_info.yuv_color_space : __DRI_YUV_COLOR_SPACE_ITU_REC601;
     attribs[atti++] = EGL_YUV_CHROMA_HORIZONTAL_SITING_HINT_EXT;
-    attribs[atti++] = buffer_color_info.horizontal_siting;
+    attribs[atti++] = buffer_color_info.horizontal_siting > 0 ? buffer_color_info.horizontal_siting : __DRI_YUV_CHROMA_SITING_0;
     attribs[atti++] = EGL_YUV_CHROMA_VERTICAL_SITING_HINT_EXT;
-    attribs[atti++] = buffer_color_info.vertical_siting;
+    attribs[atti++] = buffer_color_info.vertical_siting > 0 ? buffer_color_info.vertical_siting : __DRI_YUV_CHROMA_SITING_0;
   }
 
   auto has_dmabuf_modifier =

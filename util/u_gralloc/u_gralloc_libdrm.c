@@ -29,6 +29,7 @@ struct libdrm_gralloc {
 };
 
 static const char gbm_gralloc_module_name[] = "GBM Memory Allocator";
+static const char minigbm_gralloc_module_name[] = "CrOS Gralloc";
 
 static int get_buffer_info(struct u_gralloc *gralloc,
                            struct u_gralloc_buffer_handle *hnd,
@@ -75,7 +76,8 @@ struct u_gralloc *u_gralloc_libdrm_create() {
 
   if (err) goto fail;
 
-  if (strcmp(gr->gralloc_module->common.name, gbm_gralloc_module_name) != 0)
+  if (strcmp(gr->gralloc_module->common.name, gbm_gralloc_module_name) != 0
+        && strcmp(gr->gralloc_module->common.name, minigbm_gralloc_module_name) != 0)
     goto fail;
 
   gr->base.ops.get_buffer_basic_info = get_buffer_info;

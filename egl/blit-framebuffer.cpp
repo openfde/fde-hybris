@@ -12,6 +12,7 @@
 
 #include "egl-display.h"
 #include "pixel-format.h"
+#include <hardware/gralloc.h>
 
 #define HYBRIS_GET_SYMBOL_ADDRESS(symbol) \
   ({ egl::EglProxy::Instance()->Api().eglGetProcAddress(#symbol); })
@@ -48,96 +49,95 @@ HYBRIS_IMPLEMENT_FUNCTION0(GLenum, glGetError);
 HYBRIS_IMPLEMENT_FUNCTION0(void, glFinish);
 
 HYBRIS_IMPLEMENT_FUNCTION4(void, glViewport, GLint, GLint, GLsizei, GLsizei);
+
+HYBRIS_IMPLEMENT_FUNCTION10(void, glBlitFramebuffer, GLint, GLint, GLint, GLint,
+                            GLint, GLint, GLint, GLint, GLbitfield, GLenum);
 }
 
 namespace {
 
-class FrameBufferBinder {
- public:
-  GLint GetFbo() const { return fbo_; }
-
-  explicit FrameBufferBinder(GLenum fb_target, EGLImage image)
-      : fb_target_(fb_target) {
-    GLenum fb_bound = (fb_target_ == GL_READ_FRAMEBUFFER)
-                          ? GL_READ_FRAMEBUFFER_BINDING
-                          : GL_DRAW_FRAMEBUFFER_BINDING;
-    glGetIntegerv(fb_bound, &prev_fbo_);
-    if (prev_fbo_ != 0) {
-      glBindFramebuffer(fb_target_, 0);
+const char* eglStrError(EGLint err)
+{
+    switch (err){
+        case EGL_SUCCESS:           return "EGL_SUCCESS";
+        case EGL_NOT_INITIALIZED:   return "EGL_NOT_INITIALIZED";
+        case EGL_BAD_ACCESS:        return "EGL_BAD_ACCESS";
+        case EGL_BAD_ALLOC:         return "EGL_BAD_ALLOC";
+        case EGL_BAD_ATTRIBUTE:     return "EGL_BAD_ATTRIBUTE";
+        case EGL_BAD_CONFIG:        return "EGL_BAD_CONFIG";
+        case EGL_BAD_CONTEXT:       return "EGL_BAD_CONTEXT";
+        case EGL_BAD_CURRENT_SURFACE: return "EGL_BAD_CURRENT_SURFACE";
+        case EGL_BAD_DISPLAY:       return "EGL_BAD_DISPLAY";
+        case EGL_BAD_MATCH:         return "EGL_BAD_MATCH";
+        case EGL_BAD_NATIVE_PIXMAP: return "EGL_BAD_NATIVE_PIXMAP";
+        case EGL_BAD_NATIVE_WINDOW: return "EGL_BAD_NATIVE_WINDOW";
+        case EGL_BAD_PARAMETER:     return "EGL_BAD_PARAMETER";
+        case EGL_BAD_SURFACE:       return "EGL_BAD_SURFACE";
+        case EGL_CONTEXT_LOST:      return "EGL_CONTEXT_LOST";
+        case 0x502:                 return "GL_INVALID_OPERATION";
+        default: return "UNKNOWN";
     }
-
-    GLint curr_tex_bind = {};
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &curr_tex_bind);
-
-    glGenTextures(1, &tex_);
-    glBindTexture(GL_TEXTURE_2D, tex_);
-    glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, image);
-
-    glBindTexture(GL_TEXTURE_2D, curr_tex_bind);
-
-    glGenFramebuffers(1, &fbo_);
-    glBindFramebuffer(fb_target_, fbo_);
-    glFramebufferTexture2D(fb_target_, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                           tex_, 0);
-    if (auto status = glCheckFramebufferStatus(fb_target_);
-        status != GL_FRAMEBUFFER_COMPLETE) {
-      ALOGE("glFramebufferTexture2D: FBO not complete: 0x%04X", status);
-    }
-  }
-
-  ~FrameBufferBinder() {
-    if (fbo_ != 0) {
-      glBindFramebuffer(fb_target_, 0);
-      glDeleteFramebuffers(1, &fbo_);
-    }
-    if (tex_ != 0) {
-      glDeleteTextures(1, &tex_);
-    }
-    if (prev_fbo_ != 0) {
-      glBindFramebuffer(fb_target_, prev_fbo_);
-    }
-  }
-
- private:
-  GLenum fb_target_{};
-  GLint prev_fbo_{};
-  GLuint tex_{};
-  GLuint fbo_{};
-};
-
-class Texture2DBinder {
- public:
-  Texture2DBinder(GLuint tex) {
-    glGetIntegerv(GL_TEXTURE_BINDING_2D, &prev_tex_);
-    glBindTexture(GL_TEXTURE_2D, tex);
-  }
-  ~Texture2DBinder() { glBindTexture(GL_TEXTURE_2D, prev_tex_); }
-
- private:
-  GLint prev_tex_{};
-};
-
-void CopyFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height,
+}
+void CopyFromFramebuffer(EGLImage egl_image, int32_t width, int32_t height, int32_t flip,
                          GLint fbo = 0) {
   GLuint tmp_tex = {};
   GLint curr_tex_bind = {};
-  GLint prev_read_fbo = {};
+  GLint prev_read_fbo = {}, prev_draw_fbo = {};
   glGetIntegerv(GL_TEXTURE_BINDING_2D, &curr_tex_bind);
   glGenTextures(1, &tmp_tex);
   glBindTexture(GL_TEXTURE_2D, tmp_tex);
   glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, egl_image);
+  GLenum err = glGetError();
+  if (err != GL_NO_ERROR) {
+      ALOGE("glEGLImageTargetTexture2DOES fail %dx%d err:%s(0x%x)",
+        width, height, eglStrError(err), err);
+  }
 
-  // gles3
+  // 保存当前帧缓冲状态
   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read_fbo);
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prev_draw_fbo);
+
   if (prev_read_fbo != fbo) {
+    // 绑定源帧缓冲（读缓冲）
     glBindFramebuffer(GL_READ_FRAMEBUFFER, fbo);
   }
 
-  glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
-
-  if (prev_read_fbo != fbo) {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev_read_fbo);
+  // 创建临时帧缓冲，将纹理作为颜色附件
+  GLuint temp_fbo;
+  glGenFramebuffers(1, &temp_fbo);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, temp_fbo);
+  glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                         GL_TEXTURE_2D, tmp_tex, 0);
+  err = glGetError();
+  if (err != GL_NO_ERROR) {
+      ALOGE("glFramebufferTexture2D fail %dx%d err:%s(0x%x)",
+        width, height, eglStrError(err), err);
   }
+
+  // glCopyTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 0, 0, width, height);
+  if (flip) {
+    // 垂直翻转拷贝：源矩形 (0,0,width,height)，目标矩形 (0,height,width,0)
+    glBlitFramebuffer(0, 0, width, height,
+                    0, height, width, 0,
+                    GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  } else {
+    glBlitFramebuffer(0, 0, width, height,
+                    0, 0, width, height,
+                    GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  }
+  err = glGetError();
+  if (err != GL_NO_ERROR) {
+      ALOGE("glBlitFramebuffer fail %dx%d err:%s(0x%x)",
+        width, height, eglStrError(err), err);
+  }
+
+  glFinish();
+  if (prev_read_fbo != fbo) {
+    // 恢复状态
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, prev_read_fbo);
+  }
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, prev_draw_fbo);
+  glDeleteFramebuffers(1, &temp_fbo);
 
   glBindTexture(GL_TEXTURE_2D, curr_tex_bind);
   glDeleteTextures(1, &tmp_tex);
@@ -218,60 +218,6 @@ bool GetTextureFormatParameters(GLint internal_format, GLenum *tex_format,
 
 namespace egl {
 
-EGLImage Texture2D::EglImage() {
-  if (!egl_img_) {
-    auto &api = egl::EglProxy::Instance()->Api();
-    auto dpy = api.eglGetCurrentDisplay();
-    auto context = api.eglGetCurrentContext();
-    auto tex = Id();
-    if (auto egl_img =
-            api.eglCreateImage(dpy, context, EGL_GL_TEXTURE_2D_KHR,
-                               (EGLClientBuffer)(uintptr_t)tex, nullptr);
-        egl_img) {
-      auto destroy = api.eglDestroyImage;
-      egl_img_.reset(egl_img,
-                     [destroy, dpy](EGLImage img) { destroy(dpy, img); });
-    }
-  }
-  return egl_img_.get();
-}
-
-GLuint Texture2D::Id() { return tex_; }
-
-void Texture2D::Delete() {
-  egl_img_.reset();
-  if (tex_ != 0) {
-    glDeleteTextures(1, &tex_);
-    tex_ = 0;
-  }
-}
-
-Texture2DPtr Texture2D::CreateTexture(GLenum internal_format, int32_t width,
-                                      int32_t height) {
-  GLenum tex_format;
-  GLenum pixel_type;
-  GLint sized_internal_format;
-  if (!GetTextureFormatParameters(internal_format, &tex_format, &pixel_type,
-                                  &sized_internal_format)) {
-    ALOGE("Not support texture internal format 0x%04X", internal_format);
-    return nullptr;
-  }
-
-  GLuint tex = {};
-  glGenTextures(1, &tex);
-  Texture2DBinder tex2d(tex);
-
-  glTexImage2D(GL_TEXTURE_2D, 0, internal_format, width, height, 0, tex_format,
-               pixel_type, nullptr);
-
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-  return std::make_shared<Texture2D>(tex);
-}
-
 void BlitFramebuffer::Blit(ANativeWindowBuffer *native_buffer) {
   if (!native_buffer) {
     return;
@@ -286,7 +232,9 @@ void BlitFramebuffer::Blit(ANativeWindowBuffer *native_buffer) {
   auto image =
       std::make_shared<AndroidBufferImage>(dpy_, proxy_, native_buffer);
   if (auto egl_img = image->CreateImage(); egl_img != EGL_NO_IMAGE) {
-    CopyFromFramebuffer(egl_img, width, height);
+    int flip = (native_buffer->usage & GRALLOC_USAGE_PRIVATE_1);
+    CopyFromFramebuffer(egl_img, width, height, flip);
+
     image->DestroyImage();
   }
 
