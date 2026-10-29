@@ -8,6 +8,9 @@
 #include <system/graphics-base.h>
 #include <log/log.h>
 
+#define HAL_PIXEL_FORMAT_RGBA_5551  6
+#define HAL_PIXEL_FORMAT_RGBA_4444 7
+
 namespace {
 
 GLenum ConvertToTexInternalFormat(int32_t pixel_format) {
@@ -24,6 +27,12 @@ GLenum ConvertToTexInternalFormat(int32_t pixel_format) {
       break;
     case HAL_PIXEL_FORMAT_RGBA_1010102:
       tex_internal_format = GL_RGB10_A2;
+      break;
+    case HAL_PIXEL_FORMAT_RGBA_5551:
+      tex_internal_format = GL_RGB5_A1;
+      break;
+    case HAL_PIXEL_FORMAT_RGBA_4444:
+      tex_internal_format = GL_RGBA4;
       break;
     default:
       break;
@@ -61,6 +70,18 @@ HalPixelFormat::HalPixelFormat(int32_t format) : format_(format) {
       blue_size_ = 10;
       alpha_size_ = 2;
       break;
+    case HAL_PIXEL_FORMAT_RGBA_5551:
+      red_size_ = 5;
+      green_size_ = 5;
+      blue_size_ = 5;
+      alpha_size_ = 1;
+      break;
+    case HAL_PIXEL_FORMAT_RGBA_4444:
+      red_size_ = 4;
+      green_size_ = 4;
+      blue_size_ = 4;
+      alpha_size_ = 4;
+      break;
     default:
       break;
   }
@@ -88,12 +109,12 @@ bool HalPixelFormat::BuildFormat(int32_t red_size, int32_t green_size,
     red_size = 8;
     green_size = 8;
     blue_size = 8;
-    // } else if ((red_size == 5) && (green_size == 5) && (blue_size == 5) &&
-    //            (alpha_size == 1)) {
-    //   format = HAL_PIXEL_FORMAT_RGBA_5551;
-    // } else if ((red_size == 4) && (green_size == 4) && (blue_size == 4) &&
-    //            (alpha_size == 4)) {
-    //   format = HAL_PIXEL_FORMAT_RGBA_4444;
+  } else if ((red_size == 5) && (green_size == 5) && (blue_size == 5) &&
+               (alpha_size == 1)) {
+    format = HAL_PIXEL_FORMAT_RGBA_5551;
+  } else if ((red_size == 4) && (green_size == 4) && (blue_size == 4) &&
+               (alpha_size == 4)) {
+    format = HAL_PIXEL_FORMAT_RGBA_4444;
   } else {
     ALOGD("BuildFormat failed: R:%d, G:%d, B:%d, A:%d",
         red_size, green_size, blue_size, alpha_size);
