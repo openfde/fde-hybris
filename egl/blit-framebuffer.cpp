@@ -219,9 +219,10 @@ bool GetTextureFormatParameters(GLint internal_format, GLenum *tex_format,
 namespace egl {
 
 void BlitFramebuffer::Blit(ANativeWindowBuffer *native_buffer) {
-  if (!native_buffer) {
+  if (!native_buffer || !native_buffer->handle) {
     return;
   }
+
   auto width = native_buffer->width;
   auto height = native_buffer->height;
 

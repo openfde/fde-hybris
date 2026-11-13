@@ -13,6 +13,9 @@
 #include <hardware/gralloc.h>
 #include <log/log.h>
 
+#include <string.h>
+#include <cutils/properties.h>
+
 enum chroma_order {
   YCbCr,
   YCrCb,
@@ -72,6 +75,16 @@ bool is_hal_format_yuv(int native) {
   for (int i = 0; i < ARRAY_SIZE(droid_yuv_formats); ++i)
     if (droid_yuv_formats[i].native == native) return true;
 
+  return false;
+}
+
+bool is_nvidia() {
+  char property[PROPERTY_VALUE_MAX];
+  if (property_get("ro.hardware.gpu.model", property, "default") > 0) {
+    if (strcmp(property, "nvidia") == 0) {
+      return true;
+    }
+  }
   return false;
 }
 
@@ -154,6 +167,12 @@ int bufferinfo_from_ycbcr(const struct android_ycbcr *ycbcr,
     return -EINVAL;
   }
 
+  if (is_nvidia()) {
+    if (hnd->hal_format == HAL_PIXEL_FORMAT_YV12) {
+      drm_fourcc = DRM_FORMAT_YUV420;
+    }
+  }
+
   out->drm_fourcc = drm_fourcc;
 
   out->num_planes = ycbcr->chroma_step == 2 ? 2 : 3;
@@ -168,6 +187,14 @@ int bufferinfo_from_ycbcr(const struct android_ycbcr *ycbcr,
   } else {
     out->offsets[1] = (size_t)ycbcr->cb;
     out->offsets[2] = (size_t)ycbcr->cr;
+  }
+
+  if (is_nvidia()) {
+    if (hnd->hal_format == HAL_PIXEL_FORMAT_YV12) {
+      size_t offset_tmp = out->offsets[1];
+      out->offsets[1] = out->offsets[2];
+      out->offsets[2] = offset_tmp;
+    }
   }
 
   /* .ystride is the line length (in bytes) of the Y plane,
