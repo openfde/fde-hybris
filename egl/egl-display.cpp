@@ -60,7 +60,7 @@ DisplayManagerPtr &DisplayManager::Instance() {
     std::lock_guard<std::mutex> guard{mtx};
     if (!inited) {
       manager = std::make_shared<DisplayManager>();
-      std::atomic_thread_fence(std::memory_order::memory_order_release);
+      std::atomic_thread_fence(std::memory_order_release);
       inited = true;
     }
   }
