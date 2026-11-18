@@ -49,7 +49,7 @@ std::string StrError(EGLint errnum) {
     return it->second.c_str();
   }
 
-  char buf[8]{};
+  char buf[16]{};
   snprintf(buf, sizeof(buf), " : 0x%04X", errnum);
   return buf;
 }

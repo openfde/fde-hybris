@@ -132,7 +132,7 @@ GrallocPtr &AndroidBufferImage::GetGralloc() {
       if (auto gr = u_gralloc_create(U_GRALLOC_TYPE_LIBDRM); gr) {
         gralloc.reset(gr, [](u_gralloc *gr) { u_gralloc_destroy(&gr); });
       }
-      std::atomic_thread_fence(std::memory_order::memory_order_release);
+      std::atomic_thread_fence(std::memory_order_release);
       inited_gralloc = true;
     }
   }
