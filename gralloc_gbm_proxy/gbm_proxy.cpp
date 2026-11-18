@@ -40,7 +40,7 @@ GbmProxyPtr &GbmProxy::Instance() {
     std::lock_guard<std::mutex> guard{mtx};
     if (!inited) {
       gbm = Load();
-      std::atomic_thread_fence(std::memory_order::memory_order_release);
+      std::atomic_thread_fence(std::memory_order_release);
       inited = true;
     }
   }
