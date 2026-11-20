@@ -73,7 +73,6 @@ static std::unordered_map<buffer_handle_t, struct gbm_bo *> gbm_bo_handle_map;
 static std::unordered_map<uint32_t, std::vector<uint64_t>> gbm_format_modifiers_map;
 
 static bool is_rgba_family(int format);
-static bool is_cursor_buffer(uint32_t format, int gbm_usage, uint32_t w, uint32_t h);
 static bool gralloc_need_sync(struct gralloc_handle_t *gbm_handle);
 
 /* Serializes ALL GL work: the readback (sync_gpu_to_cpu), the writeback
@@ -280,7 +279,7 @@ static unsigned int get_pipe_bind(int usage)
 	if (usage & (GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_OFTEN))
 		bind |= GBM_BO_USE_LINEAR;
 	if (usage & GRALLOC_USAGE_CURSOR)
-		bind = GBM_BO_USE_CURSOR;
+		;//bind = GBM_BO_USE_CURSOR;
 	if (usage & (GRALLOC_USAGE_HW_RENDER | GRALLOC_USAGE_HW_TEXTURE))
 		bind |= GBM_BO_USE_RENDERING;
 	if (usage & GRALLOC_USAGE_HW_FB)
@@ -373,31 +372,10 @@ static bool is_rgba_family(int format)
 	}
 }
 
-/* A Wayland/KMS hardware cursor (wl_pointer_set_cursor) must be a LINEAR dma-buf:
- * it is scanned out directly by the cursor plane, which rejects tiled buffers, so
- * the cursor stays invisible. Our dual-bo path makes prime_fd TILED, which is
- * exactly what breaks the cursor. Identify a cursor buffer either by the explicit
- * GBM_BO_USE_CURSOR flag, or -- when the framework omits it (as Android's
- * SpriteController does) -- by the practical signature: a small RGBA buffer
- * carrying both RENDERING and LINEAR usage (CPU-written, GPU-readable). */
-static bool is_cursor_buffer(uint32_t format, int usage, uint32_t w, uint32_t h)
-{
-	if (usage & GBM_BO_USE_CURSOR)
-		return true;
-	if (is_rgba_family(format)
-		&& ((usage&GBM_BO_USE_LINEAR) && (usage&GBM_BO_USE_RENDERING))
-		&& (w < 64 && h < 64 && w == h))
-		return true;
-	return false;
-}
-
-
 static bool gralloc_need_sync(struct gralloc_handle_t *gbm_handle)
 {
 	int usage = get_pipe_bind(gbm_handle->usage);
 	if (!is_nvidia)
-		return false;
-	if (is_cursor_buffer(gbm_handle->format, usage, gbm_handle->width, gbm_handle->height))
 		return false;
 	if (!((usage&GBM_BO_USE_LINEAR) && (usage&GBM_BO_USE_RENDERING)))
 		return false;
@@ -465,10 +443,6 @@ static struct gbm_bo *gbm_alloc(struct gbm_device *gbm,
 			width = 64;
 		if (handle->height < 64)
 			height = 64;
-	}
-
-	if (is_cursor_buffer(handle->format, usage, handle->width, handle->height) && is_nvidia) {
-		usage = GBM_BO_USE_CURSOR;
 	}
 
 	/*
@@ -687,22 +661,38 @@ static void sync_cpu_to_gpu(struct gbm_bo *gpu_bo, void *cpu_ptr,
 	auto eglCreateImage = (PFNEGLCREATEIMAGEPROC)dlsym(g_blit_egl, "eglCreateImage");
 	auto eglDestroyImage = (PFNEGLDESTROYIMAGEPROC)dlsym(g_blit_egl, "eglDestroyImage");
 	auto glEGLImageTargetTexture2DOES = (void (*)(GLenum, GLeglImageOES))g_blit_getproc("glEGLImageTargetTexture2DOES");
-	auto glTexSubImage2D = (void (*)(GLenum, GLint, GLint, GLint, GLsizei, GLsizei, GLenum, GLenum, const void *))g_blit_getproc("glTexSubImage2D");
+	auto glTexImage2D = (void (*)(GLenum, GLint, GLint, GLsizei, GLsizei,
+	                              GLint, GLenum, GLenum, const void *))g_blit_getproc("glTexImage2D");
+	auto glTexParameteri = (void (*)(GLenum, GLenum, GLint))g_blit_getproc("glTexParameteri");
 	auto glGenTextures = (void (*)(GLsizei, GLuint *))g_blit_getproc("glGenTextures");
 	auto glBindTexture = (void (*)(GLenum, GLuint))g_blit_getproc("glBindTexture");
 	auto glDeleteTextures = (void (*)(GLsizei, const GLuint *))g_blit_getproc("glDeleteTextures");
-	auto glTexParameteri = (void (*)(GLenum, GLenum, GLint))g_blit_getproc("glTexParameteri");
-	auto glPixelStorei = (void (*)(GLenum, GLint))g_blit_getproc("glPixelStorei");
+	auto glGenFramebuffers = (void (*)(GLsizei, GLuint *))g_blit_getproc("glGenFramebuffers");
+	auto glBindFramebuffer = (void (*)(GLenum, GLuint))g_blit_getproc("glBindFramebuffer");
+	auto glFramebufferTexture2D = (void (*)(GLenum, GLenum, GLenum, GLuint, GLint))g_blit_getproc("glFramebufferTexture2D");
+	auto glCheckFramebufferStatus = (GLenum (*)(GLenum))g_blit_getproc("glCheckFramebufferStatus");
+	auto glDeleteFramebuffers = (void (*)(GLsizei, const GLuint *))g_blit_getproc("glDeleteFramebuffers");
+	auto glBlitFramebuffer = (void (*)(GLint, GLint, GLint, GLint, GLint, GLint,
+	                                   GLint, GLint, GLbitfield, GLenum))g_blit_getproc("glBlitFramebuffer");
+	auto glFinish = (void (*)(void))g_blit_getproc("glFinish");
 	auto glGetError = (GLenum (*)(void))g_blit_getproc("glGetError");
-	if (!eglCreateImage || !glEGLImageTargetTexture2DOES || !glTexSubImage2D ||
-			!glGenTextures || !glBindTexture || !glDeleteTextures ||
-			!glTexParameteri || !glPixelStorei) {
-		ALOGE("sync_cpu_to: missing GL/EGL image symbols %d-%d-%d-%d-%d-%d-%d-%d",
-			!eglCreateImage, !glEGLImageTargetTexture2DOES, !glTexSubImage2D,
-			!glGenTextures, !glBindTexture, !glDeleteTextures,
-			!glTexParameteri, !glPixelStorei);
+	if (!eglCreateImage || !eglDestroyImage || !glEGLImageTargetTexture2DOES ||
+	    !glTexImage2D || !glTexParameteri || !glGenTextures || !glBindTexture ||
+	    !glDeleteTextures || !glGenFramebuffers || !glBindFramebuffer ||
+	    !glFramebufferTexture2D || !glCheckFramebufferStatus ||
+	    !glDeleteFramebuffers || !glBlitFramebuffer || !glFinish || !glGetError) {
+		ALOGE("sync_cpu_to: missing GL/EGL blit symbols");
 		return;
 	}
+
+	/* Diagnostics: glGetError after each step so the failing call is
+	 * unambiguous (the old code only checked once at the very end and
+	 * blamed glTexSubImage2D for errors raised by earlier calls). */
+#define SYNC_CHK(tag) do {                                             \
+		GLenum _e = glGetError();                                      \
+		if (_e != GL_NO_ERROR)                                         \
+			ALOGE("sync_cpu_to %s: glerr=0x%x", tag, _e);              \
+	} while (0)
 
 	auto make_image = [&](struct gbm_bo *bo) -> EGLImageKHR {
 		int fd = gbm_bo_get_fd(bo);
@@ -724,77 +714,128 @@ static void sync_cpu_to_gpu(struct gbm_bo *gpu_bo, void *cpu_ptr,
 		return eglCreateImage(g_blit_dpy, EGL_NO_CONTEXT, EGL_LINUX_DMA_BUF_EXT, NULL, attrs);
 	};
 
-	/* Pick the GL upload format for this SW buffer; bail if unsupported. */
-	GLenum ul_fmt, ul_type;
-	uint32_t bpp = 4;
-	if (!gralloc_to_gl_upload(hal_format, &ul_fmt, &ul_type, &bpp)) {
-		ALOGW("sync_cpu_to: SW format %d not blittable; tiled bo left stale",
-		      hal_format);
-		return;
-	}
 	uint32_t w = valid_w, h = valid_h;
-	uint32_t cpu_stride = src_pitch;   /* client's actual row pitch */
 
-	/* The client wrote cpu_ptr (a malloc buffer) using handle->stride (the
-	 * primary TILED bo's pitch) as the row pitch; that pitch is >= the tight
-	 * w*bpp due to row alignment. Re-pack the padded source into a
-	 * tightly-packed w x h buffer. nvidia ignores GL_UNPACK_ROW_LENGTH for
-	 * EGLImage-backed textures, so re-packing (rather than relying on it) is
-	 * the robust fix for the previous sheared/garbled (花屏) output. */
-	const void *upload_ptr = cpu_ptr;
-	std::vector<unsigned char> tight;
-	if (cpu_stride != w * bpp) {
-		tight.resize((size_t)w * h * bpp);
-		const unsigned char *src = (const unsigned char *)cpu_ptr;
-		unsigned char *dst = tight.data();
-		uint32_t row_bytes = w * bpp;
-		for (uint32_t y = 0; y < h; y++) {
-			memcpy(dst, src, row_bytes);
-			src += cpu_stride;
-			dst += row_bytes;
+	/* NVIDIA rejects glTexSubImage2D (and glCopyImageSubData) into a dma-buf
+	 * EGLImage-backed texture with 0x502: a tiled BO is GPU-private storage
+	 * and cannot be written from the CPU uploads path.  The readback path in
+	 * sync_gpu_to_cpu() proves the same BO *is* usable as an FBO colour
+	 * attachment, so stage the CPU pixels in a plain RGBA8888 texture and
+	 * blit GPU->GPU into an FBO whose attachment is the gpu_bo EGLImage. */
+	std::vector<unsigned char> tight((size_t)w * h * 4);
+	unsigned char *dst = tight.data();
+	const unsigned char *src = (const unsigned char *)cpu_ptr;
+	bool supported = true;
+	for (uint32_t y = 0; y < h && supported; y++) {
+		const unsigned char *row = src + (size_t)y * src_pitch;
+		unsigned char *out = dst + (size_t)y * w * 4;
+		switch (hal_format) {
+		case HAL_PIXEL_FORMAT_BGRA_8888:      /* [BBQ] Sprite cursor */
+			for (uint32_t x = 0; x < w; x++) {
+				out[x * 4 + 0] = row[x * 4 + 2];
+				out[x * 4 + 1] = row[x * 4 + 1];
+				out[x * 4 + 2] = row[x * 4 + 0];
+				out[x * 4 + 3] = row[x * 4 + 3];
+			}
+			break;
+		case HAL_PIXEL_FORMAT_RGBA_8888:
+		case HAL_PIXEL_FORMAT_RGBX_8888:
+			memcpy(out, row, (size_t)w * 4);
+			break;
+		case HAL_PIXEL_FORMAT_RGB_888:
+			for (uint32_t x = 0; x < w; x++) {
+				out[x * 4 + 0] = row[x * 3 + 0];
+				out[x * 4 + 1] = row[x * 3 + 1];
+				out[x * 4 + 2] = row[x * 3 + 2];
+				out[x * 4 + 3] = 0xFF;
+			}
+			break;
+		case HAL_PIXEL_FORMAT_RGB_565:
+			for (uint32_t x = 0; x < w; x++) {
+				uint16_t v = row[x * 2] | ((uint16_t)row[x * 2 + 1] << 8);
+				out[x * 4 + 0] = ((v >> 11) & 0x1F) * 255 / 31;
+				out[x * 4 + 1] = ((v >>  5) & 0x3F) * 255 / 63;
+				out[x * 4 + 2] = ( v        & 0x1F) * 255 / 31;
+				out[x * 4 + 3] = 0xFF;
+			}
+			break;
+		default:
+			ALOGW("sync_cpu_to: SW format %d not blittable; gpu bo left stale",
+			      hal_format);
+			supported = false;
+			break;
 		}
-		upload_ptr = tight.data();
 	}
+	if (!supported)
+		return;
 
-	/* Upload the LINEAR CPU data directly into the shared TILED bo's EGLImage
-	 * texture. We deliberately avoid two broken paths on nvidia:
-	 *  - texturing the LINEAR dma-buf itself (glEGLImageTargetTexture2DOES
-	 *    returns 0x502 for LINEAR RGBA); and
-	 *  - glCopyImageSubData into an EGLImage-backed dma-buf (nvidia rejects an
-	 *    EGLImage texture as a copy target -> 0x502, the exact failure seen in
-	 *    testing: "unlock sync_blit: CPU->GPU copy done glerr=0x502").
-	 * glTexSubImage2D into the EGLImage-backed texture is the EGL_KHR_gl_image
-	 * sanctioned way to push CPU pixels into a tiled dma-buf. */
-	EGLImageKHR dst = make_image(gpu_bo);
-	if (dst == EGL_NO_IMAGE_KHR) {
+	EGLImageKHR dst_img = make_image(gpu_bo);
+	if (dst_img == EGL_NO_IMAGE_KHR) {
 		ALOGE("sync_cpu_to: eglCreateImage(dst) failed");
 		return;
 	}
-	GLuint tex = 0;
-	glGenTextures(1, &tex);
-	glBindTexture(GL_TEXTURE_2D, tex);
+
+	GLuint src_tex = 0, src_fbo = 0, dst_tex = 0, dst_fbo = 0;
+
+	/* 1) staging texture: plain GL storage, CPU upload is legal here */
+	glGenTextures(1, &src_tex);
+	glBindTexture(GL_TEXTURE_2D, src_tex);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, dst);   /* tiled bo = tex storage */
-
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	/* upload_ptr is already tightly packed (w x h); no UNPACK_ROW_LENGTH */
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, (GLsizei)w, (GLsizei)h,
-	                ul_fmt, ul_type, upload_ptr);
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
-
-	if (glGetError && glGetError() != GL_NO_ERROR) {
-		ALOGE("unlock sync_cpu_to: glTexSubImage2D failed, %dx%d gpu_bo:%p, cpu_ptr:%p",
-		      w, h, gpu_bo, cpu_ptr);
-		glDeleteTextures(1, &tex);
-		eglDestroyImage(g_blit_dpy, dst);
-		return;
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)w, (GLsizei)h, 0,
+	             GL_RGBA, GL_UNSIGNED_BYTE, dst);
+	SYNC_CHK("src_teximage");
+	glGenFramebuffers(1, &src_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, src_fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+	                       GL_TEXTURE_2D, src_tex, 0);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		ALOGE("sync_cpu_to: src FBO incomplete");
+		goto cleanup;
 	}
-	ALOGV("unlock sync_blit: CPU->GPU writback %ux%u fmt=%d done. gpu_bo:%p, cpu_ptr:%p",
-				w, h, hal_format, gpu_bo, cpu_ptr);
 
-	glDeleteTextures(1, &tex);
-	eglDestroyImage(g_blit_dpy, dst);
+	/* 2) destination: gpu_bo EGLImage as FBO colour attachment -- the same
+	 *    construct sync_gpu_to_cpu() uses successfully for readback. */
+	glGenTextures(1, &dst_tex);
+	glBindTexture(GL_TEXTURE_2D, dst_tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, dst_img);
+	SYNC_CHK("image_target");
+	glGenFramebuffers(1, &dst_fbo);
+	glBindFramebuffer(GL_FRAMEBUFFER, dst_fbo);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+	                       GL_TEXTURE_2D, dst_tex, 0);
+	if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+		ALOGE("sync_cpu_to: dst FBO incomplete");
+		goto cleanup;
+	}
+
+	/* 3) GPU->GPU copy, then finish so the consumer never samples a
+	 *    half-written BO (no release fence needed on this path). */
+	glBindFramebuffer(GL_READ_FRAMEBUFFER, src_fbo);
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, dst_fbo);
+	glBlitFramebuffer(0, 0, (GLint)w, (GLint)h, 0, 0, (GLint)w, (GLint)h,
+	                  GL_COLOR_BUFFER_BIT, GL_NEAREST);
+	SYNC_CHK("blit");
+	glFinish();
+
+	ALOGV("unlock sync_blit: CPU->GPU blit %ux%u fmt=%d done. gpu_bo:%p, cpu_ptr:%p",
+	      w, h, hal_format, gpu_bo, cpu_ptr);
+
+cleanup:
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	if (src_fbo)
+		glDeleteFramebuffers(1, &src_fbo);
+	if (dst_fbo)
+		glDeleteFramebuffers(1, &dst_fbo);
+	if (src_tex)
+		glDeleteTextures(1, &src_tex);
+	if (dst_tex)
+		glDeleteTextures(1, &dst_tex);
+	eglDestroyImage(g_blit_dpy, dst_img);
+
+#undef SYNC_CHK
 }
 
 static void sync_gpu_to_cpu(struct gbm_bo *gpu_bo, void *cpu_ptr,
